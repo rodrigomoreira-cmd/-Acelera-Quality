@@ -1,0 +1,704 @@
+[
+    {
+        "id": 1764767529.630368,
+        "dataHoraAlerta": "03/12/2025, 10:12:09",
+        "sdr": "Andreina",
+        "lastInteraction": "02/12/2025 10:12:09",
+        "timeWithoutResponse": "1d 0h 0m 0s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&ticket=a9f2ded4-a89e-4976-94f0-5575e61c0845&user=405",
+        "status": "Alerta Disparado"
+    },
+    {
+        "id": 1764768372.083652,
+        "dataHoraAlerta": "03/12/2025, 10:26:12",
+        "sdr": "Andreina",
+        "lastInteraction": "03/12/2025 18:08:00",
+        "timeWithoutResponse": "0d 7h 41m 47s",
+        "leadLink": "https://novo.selenebot.com.br/login?urlReturn=/tickets?view=waiting-room&ticket=a9f2ded4-a89e-4976-94f0-5575e61c0845&user=405",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1764768876.824788,
+        "dataHoraAlerta": "03/12/2025, 10:34:36",
+        "sdr": "Andreina",
+        "lastInteraction": "03/12/2025 15:05:00",
+        "timeWithoutResponse": "0d 4h 30m 23s",
+        "leadLink": "https://novo.selenebot.com.br/login?urlReturn=/tickets?view=waiting-room&ticket=a9f2ded4-a89e-4976-94f0-5575e61c0845&user=405",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765286518.618955,
+        "dataHoraAlerta": "09/12/2025, 10:21:58",
+        "sdr": "Emy",
+        "lastInteraction": "09/12/2025 09:54:00",
+        "timeWithoutResponse": "0d 0h 27m 58s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=507&ticket=ed4a1601-76a3-4a9a-aed0-174dc158d534",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765286718.285027,
+        "dataHoraAlerta": "09/12/2025, 10:25:18",
+        "sdr": "Jonathan",
+        "lastInteraction": "09/12/2025 00:35:00",
+        "timeWithoutResponse": "0d 9h 50m 18s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&ticket=357e3773-734c-4179-b511-00fbe93ba9c1&user=532",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765302550.819073,
+        "dataHoraAlerta": "09/12/2025, 14:49:10",
+        "sdr": "Pablo",
+        "lastInteraction": "09/12/2025 14:30:00",
+        "timeWithoutResponse": "0d 0h 19m 10s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=509&ticket=8f01a524-847e-4e8d-963b-e3c94b8162b0",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765384216.946066,
+        "dataHoraAlerta": "10/12/2025, 13:30:16",
+        "sdr": "Paulo",
+        "lastInteraction": "10/12/2025 12:24:00",
+        "timeWithoutResponse": "0d 1h 6m 16s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&ticket=a387ace0-708b-46e3-ac99-4412979ec995&user=509",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765384309.652207,
+        "dataHoraAlerta": "10/12/2025, 13:31:49",
+        "sdr": "Emy",
+        "lastInteraction": "10/12/2025 12:44:00",
+        "timeWithoutResponse": "0d 0h 47m 49s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&ticket=da4b502b-bb95-4772-a42e-462f5074ebde&user=507",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765384392.578525,
+        "dataHoraAlerta": "10/12/2025, 13:33:12",
+        "sdr": "Lane",
+        "lastInteraction": "10/12/2025 13:00:00",
+        "timeWithoutResponse": "0d 0h 33m 12s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&ticket=c318a6f3-32c0-40e8-99a2-986348221825&user=405",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765384635.003597,
+        "dataHoraAlerta": "10/12/2025, 13:37:15",
+        "sdr": "Andreina",
+        "lastInteraction": "10/12/2025 13:00:00",
+        "timeWithoutResponse": "0d 0h 37m 15s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&ticket=c318a6f3-32c0-40e8-99a2-986348221825&user=405",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765455256.330785,
+        "dataHoraAlerta": "11/12/2025, 09:14:16",
+        "sdr": "Lane",
+        "lastInteraction": "10/12/2025 23:47:00",
+        "timeWithoutResponse": "0d 9h 27m 16s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=405&ticket=8b327a5e-ad66-4886-a260-775dd135c33e",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765455331.45319,
+        "dataHoraAlerta": "11/12/2025, 09:15:31",
+        "sdr": "Lane",
+        "lastInteraction": "10/12/2025 23:57:00",
+        "timeWithoutResponse": "0d 9h 18m 31s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=405&ticket=5e079bef-7899-4fd4-a6f7-51f4764c39a4",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765455382.970503,
+        "dataHoraAlerta": "11/12/2025, 09:16:22",
+        "sdr": "Andreina",
+        "lastInteraction": "10/12/2025 22:27:00",
+        "timeWithoutResponse": "0d 10h 49m 22s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=405&ticket=27d7082c-909c-47f7-99ae-8cf440302704",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765455542.574464,
+        "dataHoraAlerta": "11/12/2025, 09:19:02",
+        "sdr": "Rayane",
+        "lastInteraction": "11/12/2025 08:22:00",
+        "timeWithoutResponse": "0d 0h 57m 2s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&ticket=30f1157e-df63-449a-a397-55b94ee9dadc&user=153",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765455636.897609,
+        "dataHoraAlerta": "11/12/2025, 09:20:36",
+        "sdr": "Andreina",
+        "lastInteraction": "11/12/2025 07:49:00",
+        "timeWithoutResponse": "0d 1h 31m 36s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&ticket=2eb84ee7-e99b-4ce1-99c6-07a82f3413e9&user=153",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765455698.055237,
+        "dataHoraAlerta": "11/12/2025, 09:21:38",
+        "sdr": "Rayane",
+        "lastInteraction": "11/12/2025 07:14:00",
+        "timeWithoutResponse": "0d 2h 7m 38s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&ticket=e137d48c-893a-4b27-8f25-001117edfb0b&user=153",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765455763.279931,
+        "dataHoraAlerta": "11/12/2025, 09:22:43",
+        "sdr": "Rayane",
+        "lastInteraction": "11/12/2025 06:37:00",
+        "timeWithoutResponse": "0d 2h 45m 43s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&ticket=336aa8d2-24bb-4237-9a13-93b837579834&user=153",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765455814.272115,
+        "dataHoraAlerta": "11/12/2025, 09:23:34",
+        "sdr": "Rayane",
+        "lastInteraction": "11/12/2025 04:13:00",
+        "timeWithoutResponse": "0d 5h 10m 34s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&ticket=13356fbc-8f11-433a-9815-ae8c0c40325d&user=153",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765455993.922416,
+        "dataHoraAlerta": "11/12/2025, 09:26:33",
+        "sdr": "Rayane",
+        "lastInteraction": "10/12/2025 23:01:00",
+        "timeWithoutResponse": "0d 10h 25m 33s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&ticket=2d5a591d-996a-4323-8494-7065ca3cdca7&user=153",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765456154.109396,
+        "dataHoraAlerta": "11/12/2025, 09:29:14",
+        "sdr": "Rayane",
+        "lastInteraction": "11/12/2025 09:16:00",
+        "timeWithoutResponse": "0d 0h 13m 14s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&ticket=684a105d-4d9a-447e-a173-3fb81ba9aa90&user=508",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765456201.643455,
+        "dataHoraAlerta": "11/12/2025, 09:30:01",
+        "sdr": "Pablo",
+        "lastInteraction": "11/12/2025 09:16:00",
+        "timeWithoutResponse": "0d 0h 14m 1s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&ticket=684a105d-4d9a-447e-a173-3fb81ba9aa90&user=508",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765456291.851342,
+        "dataHoraAlerta": "11/12/2025, 09:31:31",
+        "sdr": "Pablo",
+        "lastInteraction": "11/12/2025 09:16:00",
+        "timeWithoutResponse": "0d 0h 15m 31s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&ticket=684a105d-4d9a-447e-a173-3fb81ba9aa90&user=508",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765456370.546834,
+        "dataHoraAlerta": "11/12/2025, 09:32:50",
+        "sdr": "Pablo",
+        "lastInteraction": "11/12/2025 08:09:00",
+        "timeWithoutResponse": "0d 1h 23m 50s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&ticket=4c39f664-0f74-4d16-82af-6d044391bdc2&user=508",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765456402.368794,
+        "dataHoraAlerta": "11/12/2025, 09:33:22",
+        "sdr": "Pablo",
+        "lastInteraction": "11/12/2025 07:46:00",
+        "timeWithoutResponse": "0d 1h 47m 22s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&ticket=e9817144-bd65-4fb7-9019-02b511b0020a&user=508",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765456448.541894,
+        "dataHoraAlerta": "11/12/2025, 09:34:08",
+        "sdr": "Pablo",
+        "lastInteraction": "11/12/2025 07:19:00",
+        "timeWithoutResponse": "0d 2h 15m 8s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&ticket=a86438a1-ba30-41b0-8f15-99313debe238&user=508",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765456553.935094,
+        "dataHoraAlerta": "11/12/2025, 09:35:53",
+        "sdr": "Pablo",
+        "lastInteraction": "10/12/2025 22:53:00",
+        "timeWithoutResponse": "0d 10h 42m 53s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&ticket=beb47d52-da9c-4c83-a53b-6fb62640a0b8&user=508",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765456656.281179,
+        "dataHoraAlerta": "11/12/2025, 09:37:36",
+        "sdr": "Paulo",
+        "lastInteraction": "10/12/2025 21:53:00",
+        "timeWithoutResponse": "0d 11h 44m 36s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&ticket=eb350d6a-7511-4749-861f-3ceb16c1d512&user=508",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765456755.142606,
+        "dataHoraAlerta": "11/12/2025, 09:39:15",
+        "sdr": "Pablo",
+        "lastInteraction": "11/12/2025 20:44:00",
+        "timeWithoutResponse": "0d 11h 4m 44s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&ticket=3a3c1f0c-83ec-4319-8724-94be244ac4b3&user=508",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765456772.495605,
+        "dataHoraAlerta": "11/12/2025, 09:39:32",
+        "sdr": "Pablo",
+        "lastInteraction": "10/12/2025 20:44:00",
+        "timeWithoutResponse": "0d 12h 55m 32s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&ticket=3a3c1f0c-83ec-4319-8724-94be244ac4b3&user=508",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765456859.711743,
+        "dataHoraAlerta": "11/12/2025, 09:40:59",
+        "sdr": "Pablo",
+        "lastInteraction": "11/12/2025 20:44:00",
+        "timeWithoutResponse": "0d 11h 3m 0s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&ticket=3a3c1f0c-83ec-4319-8724-94be244ac4b3&user=508",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765456897.269992,
+        "dataHoraAlerta": "11/12/2025, 09:41:37",
+        "sdr": "Pablo",
+        "lastInteraction": "10/12/2025 20:44:00",
+        "timeWithoutResponse": "0d 12h 57m 37s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&ticket=3a3c1f0c-83ec-4319-8724-94be244ac4b3&user=508",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765456979.027064,
+        "dataHoraAlerta": "11/12/2025, 09:42:59",
+        "sdr": "Pablo",
+        "lastInteraction": "10/12/2025 20:07:00",
+        "timeWithoutResponse": "0d 13h 35m 59s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&ticket=76b84b43-b12d-48cc-9527-0fbc52d4d272&user=508",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765457200.848595,
+        "dataHoraAlerta": "11/12/2025, 09:46:40",
+        "sdr": "Pablo",
+        "lastInteraction": "11/12/2025 20:13:00",
+        "timeWithoutResponse": "0d 10h 26m 19s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&ticket=172e1a05-b196-4d0e-821a-3df4dcabc266&user=508",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765481802.104801,
+        "dataHoraAlerta": "11/12/2025, 16:36:42",
+        "sdr": "Emy",
+        "lastInteraction": "11/12/2025 13:45:00",
+        "timeWithoutResponse": "0d 2h 51m 42s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=507&ticket=2fa760b7-584c-4a6c-9913-8199f206c0aa",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765481844.048423,
+        "dataHoraAlerta": "11/12/2025, 16:37:24",
+        "sdr": "Emy",
+        "lastInteraction": "11/12/2025 13:25:00",
+        "timeWithoutResponse": "0d 3h 12m 24s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=507&ticket=9eb8b3cb-e4ec-43cf-847a-494f1c9ed611",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765481877.205796,
+        "dataHoraAlerta": "11/12/2025, 16:37:57",
+        "sdr": "Emy",
+        "lastInteraction": "11/12/2025 13:20:00",
+        "timeWithoutResponse": "0d 3h 17m 57s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=507&ticket=234172a6-73c7-4e8a-852e-89066d1c7232",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765481916.126539,
+        "dataHoraAlerta": "11/12/2025, 16:38:36",
+        "sdr": "Emy",
+        "lastInteraction": "11/12/2025 12:01:00",
+        "timeWithoutResponse": "0d 4h 37m 36s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=507&ticket=9643f85a-ac80-4710-8d56-d9d03f73bf46",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765482010.270411,
+        "dataHoraAlerta": "11/12/2025, 16:40:10",
+        "sdr": "Lane",
+        "lastInteraction": "11/12/2025 16:07:00",
+        "timeWithoutResponse": "0d 0h 33m 10s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=405&ticket=22fdfeed-5203-4c8a-85e4-8fb6999a21d4",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765543993.599653,
+        "dataHoraAlerta": "12/12/2025, 09:53:13",
+        "sdr": "Lane",
+        "lastInteraction": "12/12/2025 08:36:00",
+        "timeWithoutResponse": "0d 1h 17m 13s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&ticket=948aefae-a206-4c5c-9dc3-63063e11e92e&user=405",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765544951.99366,
+        "dataHoraAlerta": "12/12/2025, 10:09:11",
+        "sdr": "Lane",
+        "lastInteraction": "12/12/2025 08:36:00",
+        "timeWithoutResponse": "0d 1h 33m 11s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=405&ticket=948aefae-a206-4c5c-9dc3-63063e11e92e",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765545020.692217,
+        "dataHoraAlerta": "12/12/2025, 10:10:20",
+        "sdr": "Emy",
+        "lastInteraction": "12/12/2025 23:06:00",
+        "timeWithoutResponse": "0d 12h 55m 39s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=507&ticket=b6749ca6-1035-47c0-ac6d-cbb409db5b73",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765545096.970144,
+        "dataHoraAlerta": "12/12/2025, 10:11:36",
+        "sdr": "Emy",
+        "lastInteraction": "12/12/2025 07:18:00",
+        "timeWithoutResponse": "0d 2h 53m 36s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=507&ticket=4fd9f521-dec7-4873-9dbb-05235a077654",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765545131.900273,
+        "dataHoraAlerta": "12/12/2025, 10:12:11",
+        "sdr": "Emy",
+        "lastInteraction": "12/12/2025 07:00:00",
+        "timeWithoutResponse": "0d 3h 12m 11s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=507&ticket=4abda655-2030-4b0c-b0b0-751dbe26db1f",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765545168.397336,
+        "dataHoraAlerta": "12/12/2025, 10:12:48",
+        "sdr": "Emy",
+        "lastInteraction": "12/12/2025 04:01:00",
+        "timeWithoutResponse": "0d 6h 11m 48s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=507&ticket=d2768a40-d53c-4a42-8b7e-38d89a50b1ac",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765545259.317665,
+        "dataHoraAlerta": "12/12/2025, 10:14:19",
+        "sdr": "Daiane",
+        "lastInteraction": "11/12/2025 23:22:00",
+        "timeWithoutResponse": "0d 10h 52m 19s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&ticket=ee153c12-f8de-4e52-8e18-24c6833c78e9&user=404",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765804300.773486,
+        "dataHoraAlerta": "15/12/2025, 10:11:40",
+        "sdr": "Emy",
+        "lastInteraction": "13/12/2025 23:17:00",
+        "timeWithoutResponse": "1d 10h 54m 40s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=507&ticket=4b52536f-0185-41a5-8b40-b7f45c10e6fd",
+        "status": "Alerta Disparado"
+    },
+    {
+        "id": 1765804341.132678,
+        "dataHoraAlerta": "15/12/2025, 10:12:21",
+        "sdr": "Andreina",
+        "lastInteraction": "13/12/2025 21:03:00",
+        "timeWithoutResponse": "1d 13h 9m 21s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=507&ticket=26a006ac-e358-41df-8b23-2eb54e590da7",
+        "status": "Alerta Disparado"
+    },
+    {
+        "id": 1765804409.149657,
+        "dataHoraAlerta": "15/12/2025, 10:13:29",
+        "sdr": "Emy",
+        "lastInteraction": "15/12/2025 20:22:00",
+        "timeWithoutResponse": "0d 10h 8m 30s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=507&ticket=224aaba8-d42f-4b61-8e2c-b5fb6be5ac48",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765804444.905269,
+        "dataHoraAlerta": "15/12/2025, 10:14:04",
+        "sdr": "Emy",
+        "lastInteraction": "15/12/2025 20:22:00",
+        "timeWithoutResponse": "0d 10h 7m 55s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=507&ticket=224aaba8-d42f-4b61-8e2c-b5fb6be5ac48",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765804469.866687,
+        "dataHoraAlerta": "15/12/2025, 10:14:29",
+        "sdr": "Andreina",
+        "lastInteraction": "13/12/2025 20:22:00",
+        "timeWithoutResponse": "1d 13h 52m 29s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=507&ticket=224aaba8-d42f-4b61-8e2c-b5fb6be5ac48",
+        "status": "Alerta Disparado"
+    },
+    {
+        "id": 1765804511.006469,
+        "dataHoraAlerta": "15/12/2025, 10:15:11",
+        "sdr": "Andreina",
+        "lastInteraction": "13/12/2025 15:44:00",
+        "timeWithoutResponse": "1d 18h 31m 11s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=507&ticket=028c9388-0fb6-45b5-b371-9bff137d28aa",
+        "status": "Alerta Disparado"
+    },
+    {
+        "id": 1765804555.802339,
+        "dataHoraAlerta": "15/12/2025, 10:15:55",
+        "sdr": "Emy",
+        "lastInteraction": "13/12/2025 14:55:00",
+        "timeWithoutResponse": "1d 19h 20m 55s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=507&ticket=e83c90d2-0cd9-4cbb-adf0-43c866e8877a",
+        "status": "Alerta Disparado"
+    },
+    {
+        "id": 1765804651.939348,
+        "dataHoraAlerta": "15/12/2025, 10:17:31",
+        "sdr": "Emy",
+        "lastInteraction": "13/12/2025 14:54:00",
+        "timeWithoutResponse": "1d 19h 23m 31s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=507&ticket=e83c90d2-0cd9-4cbb-adf0-43c866e8877a",
+        "status": "Alerta Disparado"
+    },
+    {
+        "id": 1765804712.508822,
+        "dataHoraAlerta": "15/12/2025, 10:18:32",
+        "sdr": "Emy",
+        "lastInteraction": "13/12/2025 09:53:00",
+        "timeWithoutResponse": "2d 0h 25m 32s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=507&ticket=936c00bb-786a-4c5a-8082-f86590f88de4",
+        "status": "Alerta Disparado"
+    },
+    {
+        "id": 1765804903.43614,
+        "dataHoraAlerta": "15/12/2025, 10:21:43",
+        "sdr": "Emy",
+        "lastInteraction": "13/12/2025 09:09:00",
+        "timeWithoutResponse": "2d 1h 12m 43s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=507&ticket=c3053ee0-966e-476b-a9b0-5c18845baed0",
+        "status": "Alerta Disparado"
+    },
+    {
+        "id": 1765804945.345921,
+        "dataHoraAlerta": "15/12/2025, 10:22:25",
+        "sdr": "Emy",
+        "lastInteraction": "13/12/2025 09:32:00",
+        "timeWithoutResponse": "2d 0h 50m 25s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=507&ticket=4acc984f-e4c4-4a84-83bf-9d7b01763c6b",
+        "status": "Alerta Disparado"
+    },
+    {
+        "id": 1765805172.244099,
+        "dataHoraAlerta": "15/12/2025, 10:26:12",
+        "sdr": "Emy",
+        "lastInteraction": "13/12/2025 04:11:00",
+        "timeWithoutResponse": "2d 6h 15m 12s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=507&ticket=41a5b2fc-4311-40a6-92c5-ed28fc61f508",
+        "status": "Alerta Disparado"
+    },
+    {
+        "id": 1765805243.129136,
+        "dataHoraAlerta": "15/12/2025, 10:27:23",
+        "sdr": "Emy",
+        "lastInteraction": "15/12/2025 22:30:00",
+        "timeWithoutResponse": "0d 12h 2m 36s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=507&ticket=185be193-e284-40e6-b5f9-e362fffbd0ab",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765805313.054193,
+        "dataHoraAlerta": "15/12/2025, 10:28:33",
+        "sdr": "Emy",
+        "lastInteraction": "13/12/2025 22:30:00",
+        "timeWithoutResponse": "1d 11h 58m 33s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=507&ticket=185be193-e284-40e6-b5f9-e362fffbd0ab",
+        "status": "Alerta Disparado"
+    },
+    {
+        "id": 1765805657.925631,
+        "dataHoraAlerta": "15/12/2025, 10:34:17",
+        "sdr": "Lane",
+        "lastInteraction": "15/12/2025 08:45:00",
+        "timeWithoutResponse": "0d 1h 49m 17s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=405&ticket=9d03509b-54d5-496b-aac0-0b29b6007556",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765805714.836051,
+        "dataHoraAlerta": "15/12/2025, 10:35:14",
+        "sdr": "Lane",
+        "lastInteraction": "15/12/2025 08:51:00",
+        "timeWithoutResponse": "0d 1h 44m 14s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=405&ticket=59f97ddc-b8ea-4e0a-9f07-85470a705ece",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765805758.842643,
+        "dataHoraAlerta": "15/12/2025, 10:35:58",
+        "sdr": "Emy",
+        "lastInteraction": "15/12/2025 20:43:00",
+        "timeWithoutResponse": "0d 10h 7m 1s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=405&ticket=f3562955-a7b0-4fd5-b9ab-99c9730d3b65",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765805787.186891,
+        "dataHoraAlerta": "15/12/2025, 10:36:27",
+        "sdr": "Andreina",
+        "lastInteraction": "14/12/2025 20:43:00",
+        "timeWithoutResponse": "0d 13h 53m 27s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=405&ticket=f3562955-a7b0-4fd5-b9ab-99c9730d3b65",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765805836.459727,
+        "dataHoraAlerta": "15/12/2025, 10:37:16",
+        "sdr": "Lane",
+        "lastInteraction": "14/12/2025 21:30:00",
+        "timeWithoutResponse": "0d 13h 7m 16s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=405&ticket=d6314617-9cf5-4fef-ade7-87f4f5793b64",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765806361.444702,
+        "dataHoraAlerta": "15/12/2025, 10:46:01",
+        "sdr": "Daiane",
+        "lastInteraction": "15/12/2025 09:16:00",
+        "timeWithoutResponse": "0d 1h 30m 1s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=404&ticket=0f05af31-f665-445b-903a-96815881bfcc",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765806713.743435,
+        "dataHoraAlerta": "15/12/2025, 10:51:53",
+        "sdr": "Daiane",
+        "lastInteraction": "15/12/2025 05:06:00",
+        "timeWithoutResponse": "0d 5h 45m 53s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=404&ticket=23a73108-c5ac-48fa-90e0-a0ed6f04cea6",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765806862.440205,
+        "dataHoraAlerta": "15/12/2025, 10:54:22",
+        "sdr": "Daiane",
+        "lastInteraction": "14/12/2025 23:30:00",
+        "timeWithoutResponse": "0d 11h 24m 22s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=404&ticket=031fa445-d1e8-4ac2-b182-f022a56573a4",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765806962.934727,
+        "dataHoraAlerta": "15/12/2025, 10:56:02",
+        "sdr": "Daiane",
+        "lastInteraction": "14/12/2025 21:09:00",
+        "timeWithoutResponse": "0d 13h 47m 2s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=404&ticket=39581885-b6b7-4e10-8d26-0f8d3c6dd900",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765807195.750045,
+        "dataHoraAlerta": "15/12/2025, 10:59:55",
+        "sdr": "Daiane",
+        "lastInteraction": "14/12/2025 19:04:00",
+        "timeWithoutResponse": "0d 15h 55m 55s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=404&ticket=afea526b-e456-4e77-8e42-5f49e233785e",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765807240.683442,
+        "dataHoraAlerta": "15/12/2025, 11:00:40",
+        "sdr": "Daiane",
+        "lastInteraction": "14/12/2025 16:09:00",
+        "timeWithoutResponse": "0d 18h 51m 40s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=404&ticket=6cd06d92-c62f-421e-aff4-23861f3bbd1e",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765807298.755301,
+        "dataHoraAlerta": "15/12/2025, 11:01:38",
+        "sdr": "Daiane",
+        "lastInteraction": "14/12/2025 12:23:00",
+        "timeWithoutResponse": "0d 22h 38m 38s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=404&ticket=90fc8d3e-1a52-475a-88a4-8ca7f441f77d",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765807363.930815,
+        "dataHoraAlerta": "15/12/2025, 11:02:43",
+        "sdr": "Daiane",
+        "lastInteraction": "14/12/2025 09:24:00",
+        "timeWithoutResponse": "1d 1h 38m 43s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=404&ticket=abb4fa10-c681-4e11-8e74-d9a207cf243b",
+        "status": "Alerta Disparado"
+    },
+    {
+        "id": 1765807484.148508,
+        "dataHoraAlerta": "15/12/2025, 11:04:44",
+        "sdr": "Andreina",
+        "lastInteraction": "15/12/2025 08:56:00",
+        "timeWithoutResponse": "0d 2h 8m 44s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=404&ticket=47564a9c-cb69-4be1-b8de-00fe4a100bdb",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765808621.55454,
+        "dataHoraAlerta": "15/12/2025, 11:23:41",
+        "sdr": "Pablo",
+        "lastInteraction": "13/12/2025 18:42:00",
+        "timeWithoutResponse": "1d 16h 41m 41s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=508&ticket=1a18b0b0-8270-43ef-b964-3f534c2888ec",
+        "status": "Alerta Disparado"
+    },
+    {
+        "id": 1765808670.468765,
+        "dataHoraAlerta": "15/12/2025, 11:24:30",
+        "sdr": "Pablo",
+        "lastInteraction": "13/12/2025 18:18:00",
+        "timeWithoutResponse": "1d 17h 6m 30s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=508&ticket=4ae4ff61-d60f-49e0-9a57-5db566b4c237",
+        "status": "Alerta Disparado"
+    },
+    {
+        "id": 1765808754.993965,
+        "dataHoraAlerta": "15/12/2025, 11:25:54",
+        "sdr": "Pablo",
+        "lastInteraction": "13/12/2025 15:40:00",
+        "timeWithoutResponse": "1d 19h 45m 54s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=508&ticket=67abd47f-0c29-4492-8c51-331857474b51",
+        "status": "Alerta Disparado"
+    },
+    {
+        "id": 1765808963.383986,
+        "dataHoraAlerta": "15/12/2025, 11:29:23",
+        "sdr": "Pablo",
+        "lastInteraction": "15/12/2025 13:32:00",
+        "timeWithoutResponse": "0d 2h 2m 36s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=508&ticket=1679290b-a653-433f-ab0c-c6e3e6c5b3b5",
+        "status": "Monitorado (Abaixo do Threshold)"
+    },
+    {
+        "id": 1765809113.742618,
+        "dataHoraAlerta": "15/12/2025, 11:31:53",
+        "sdr": "Pablo",
+        "lastInteraction": "13/12/2025 11:43:00",
+        "timeWithoutResponse": "1d 23h 48m 53s",
+        "leadLink": "https://novo.selenebot.com.br/tickets?view=waiting-room&user=508&ticket=9bc84fb9-95a3-4864-8850-ac59b43d97e6",
+        "status": "Alerta Disparado"
+    }
+]

@@ -1,0 +1,89 @@
+import streamlit as st
+import time # Importe se for usar a função de sleep/wait
+
+# --- Funções de Ação (A ser implementado no seu código) ---
+
+def cadastrar_sdr(nome_sdr):
+    """
+    Simula a lógica de cadastro.
+    Aqui você adicionaria o SDR à sua base de dados (JSON, DB, etc.).
+    """
+    if nome_sdr:
+        st.session_state.feedback_cadastro = f"SDR '{nome_sdr}' cadastrado com sucesso!"
+        st.session_state.status_cadastro = "success"
+        # Adicione aqui a lógica real de persistência de dados
+        time.sleep(1) # Simula o tempo de processamento
+    else:
+        st.session_state.feedback_cadastro = "O nome do SDR não pode ser vazio."
+        st.session_state.status_cadastro = "error"
+
+def limpar_cadastro():
+    """
+    Função de callback para limpar o campo de input após o cadastro.
+    Ao ser executada no callback (on_click), ela redefine a chave no 
+    st.session_state antes do Streamlit renderizar o widget novamente.
+    """
+    # Use a chave que estava causando o erro no seu traceback
+    if "new_sdr_name_key" in st.session_state:
+        st.session_state.new_sdr_name_key = ""
+    
+    # Limpa a mensagem de feedback após a limpeza do campo
+    st.session_state.feedback_cadastro = ""
+    st.session_state.status_cadastro = ""
+
+
+# --- Função de Renderização (Onde você estava tendo o erro) ---
+
+def render_cadastro():
+    # 1. Inicializa o state (opcional, mas boa prática)
+    if 'feedback_cadastro' not in st.session_state:
+        st.session_state.feedback_cadastro = ""
+    if 'status_cadastro' not in st.session_state:
+        st.session_state.status_cadastro = ""
+
+    st.subheader("📝 Cadastro SDR")
+
+    # O widget de input - O valor digitado é automaticamente armazenado em st.session_state.new_sdr_name_key
+    nome_sdr = st.text_input(
+        "Nome do Novo SDR",
+        key="new_sdr_name_key",
+        placeholder="Ex: João Silva",
+    )
+    
+    # Exibe feedback (sucesso/erro)
+    if st.session_state.status_cadastro == "success":
+        st.success(st.session_state.feedback_cadastro)
+    elif st.session_state.status_cadastro == "error":
+        st.error(st.session_state.feedback_cadastro)
+
+
+    # Botão de Cadastro
+    # CRÍTICO: Use os callbacks 'on_click' para garantir a ordem correta de execução
+    st.button(
+        "Cadastrar",
+        on_click=limpar_cadastro, 
+        args=[], 
+        # Esta função é executada ANTES da tela ser renderizada, 
+        # redefinindo o valor da chave antes que o widget seja desenhado no próximo rerun.
+    )
+
+    # Nota: Você deve chamar a função 'cadastrar_sdr' no momento em que o 
+    # botão for clicado, mas a lógica de limpeza DEVE ser separada no 'on_click'
+    
+    # Uma forma mais simples, sem on_click, mas mais direta, se você preferir:
+    # if st.button("Cadastrar SDR"):
+    #     cadastrar_sdr(st.session_state.new_sdr_name_key)
+    #     limpar_cadastro() 
+    #     st.rerun() # Necessário para forçar a limpeza imediata
+    # Essa forma acima é mais intuitiva e menos propenso a erros de contexto.
+
+
+# --- Função Principal (Onde você chama render_cadastro) ---
+
+def main_app():
+    # ... Outras chamadas de funções ...
+    render_cadastro()
+    # ... Outras chamadas de funções ...
+
+if __name__ == "__main__":
+    main_app()
