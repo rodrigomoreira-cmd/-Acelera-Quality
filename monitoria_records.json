@@ -622,5 +622,43 @@
         "reincidenciaCount": 2,
         "reincidenciaLevel": "yellow",
         "feedback_aplicado": "Resumo da monitoria — Nota: 92.00%\n\n\"A consistência é a chave para a excelência em vendas.\"\n\nPontos de melhoria e Detalhamento dos Erros:\nO SDR Jonathan demonstrou uma boa performance, atingindo 92.00%. Os desvios identificados (1x) são pontuais e focam em pequenas inconsistências no preenchimento de dados de Selene/Nectar, que são facilmente corrigíveis.\n\nPlano de Ação Sugerido:\n1. Criar um mini-checklist de 'fechamento de ticket' para garantir a coerência dos dados. 2. Rever o padrão de observações no CRM para manter a padronização. 3. Monitoria bónus focada em melhores práticas para alcançar 100%."
+    },
+    {
+        "id": 1766493488.534728,
+        "sdr": "Andreina",
+        "data": "2025-12-23",
+        "hora": "09:38:08",
+        "dataHora": "23/12/2025, 09:36:53",
+        "crmLink": "asasa",
+        "seleneLink": "sasasasa",
+        "checklist": {
+            "atualizacao_crm": "nc",
+            "classificacao_funil": "nc",
+            "etapa_pre_qual": "nc",
+            "etapa_agendamento": "nc",
+            "validacao_sla": "nc",
+            "autorizacao_agendamento": "conforme",
+            "campos_obrigatorios": "nc",
+            "descarte_lead": "nc",
+            "obs_padronizadas": "nc",
+            "retorno_reabertos": "nc",
+            "etapa_conexao": "conforme",
+            "etapa_qualificacao": "nc",
+            "consistencia_comunicacao": "nc",
+            "followup_reg": "nc",
+            "lead_parado": "nc",
+            "transicao_sistemas": "nc",
+            "tempo_atendimento": "nc",
+            "inicio_selenebot": "nc",
+            "coerencia_dados": "nc",
+            "inicio_selene": "nc"
+        },
+        "observacoes": "asasas",
+        "plano_acao_monitor": "asasas",
+        "desviosCount": 18,
+        "pontuacoes": 85,
+        "reincidente": "NAO",
+        "reincidenciaCount": 1,
+        "feedback_aplicado": ""
     }
 ]

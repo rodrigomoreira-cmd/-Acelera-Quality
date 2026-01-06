@@ -9,25 +9,25 @@
         "id": "classificacao_funil",
         "group": "Nectar CRM",
         "label": "O SDR seguiu todas as etapas obrigatórias (conexão, pré-qualificação, registo, follow-up)?",
-        "weight": 4
+        "weight": 5
     },
     {
         "id": "etapa_pre_qual",
         "group": "Nectar CRM",
         "label": "Foram coletadas e registadas as informações iniciais sobre perfil, interesse e fit?",
-        "weight": 4
+        "weight": 5
     },
     {
         "id": "etapa_agendamento",
         "group": "Nectar CRM",
         "label": "A reunião foi agendada dentro do padrão (datas próximas e validação pelo gestor)?",
-        "weight": 4
+        "weight": 5
     },
     {
         "id": "validacao_sla",
         "group": "Nectar CRM",
         "label": "O SLA de tempo de resposta e registo de follow-up foi cumprido conforme política interna?",
-        "weight": 2
+        "weight": 5
     },
     {
         "id": "autorizacao_agendamento",
@@ -39,13 +39,13 @@
         "id": "campos_obrigatorios",
         "group": "Nectar CRM",
         "label": "Todos os campos obrigatórios (tarefas e formulário) estão preenchidos corretamente?",
-        "weight": 4
+        "weight": 5
     },
     {
         "id": "descarte_lead",
         "group": "Nectar CRM",
         "label": "O lead encerrado foi classificado corretamente (motivo e status final compatíveis)?",
-        "weight": 4
+        "weight": 5
     },
     {
         "id": "obs_padronizadas",
@@ -93,7 +93,7 @@
         "id": "transicao_sistemas",
         "group": "Integração",
         "label": "O lead foi transferido corretamente, sem duplicidade, perda ou erro de status?",
-        "weight": 2
+        "weight": 4
     },
     {
         "id": "tempo_atendimento",
