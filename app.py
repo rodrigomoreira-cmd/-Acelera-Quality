@@ -425,7 +425,52 @@ def show_hot_bread_alert(time_without_response, lead_link):
 
 # --- 4. LÓGICA DE PONTUAÇÃO E SALVAMENTO (Mantida) ---
 
+# COLE ESTE NO LUGAR (Bloco 1):
 def calculate_score_details(checklist_model, checklist_state):
+    # 1. INICIALIZAÇÃO
+    total_score = 100.0
+    weight_deducted = 0
+    nc_count = 0
+    ncg_count = 0
+    nc_items = []
+    has_ncg = False
+
+    # 2. ITERAÇÃO E SUBTRAÇÃO REAL (Sem interrupção no 85)
+    for item in checklist_model:
+        val = checklist_state.get(item["id"])
+        weight = item["weight"] or 0
+
+        if val is None or val == 'nsa':
+            continue
+
+        if val == 'nc' or val == 'nc_grave':
+            nc_count += 1
+            nc_items.append(item)
+            weight_deducted += weight
+            total_score -= weight  # Subtrai o valor real do peso definido no checklist
+
+            if val == 'nc_grave':
+                ncg_count += 1
+                has_ncg = True
+
+    # Garante que a nota não seja negativa
+    if total_score < 0:
+        total_score = 0.0
+
+    # 3. APLICAÇÃO DO CRITÉRIO ZERADOR (NC Grave)
+    final_nota = total_score
+    if has_ncg:
+        final_nota = 0.0
+
+    # O PISO DE 85% FOI REMOVIDO PARA MOSTRAR A NOTA REAL CALCULADA
+    return {
+        "finalNota": final_nota,
+        "weightDeducted": weight_deducted,
+        "ncCount": nc_count,
+        "ncgCount": ncg_count,
+        "ncItems": nc_items,
+        "hasNCG": has_ncg,
+    }
     # 1. INICIALIZAÇÃO
     total_score = 100.0
     weight_deducted = 0
@@ -914,7 +959,45 @@ def render_dashboard():
     col_ranking, col_pie = st.columns([2, 1])
 
     with col_ranking:
-        # --- GRÁFICO 1: RANKING SDR (Barras) ---
+        st.subheader("Ranking Individual (Média Real)")
+        st.markdown("_Média real considerando todas as monitorias (incluindo notas 0%)._")
+
+        # LÓGICA: Agora usamos o filtered_df diretamente para incluir os zeros
+        score_df = filtered_df.groupby('sdr')['pontuacoes'].mean().reset_index()
+        score_df.columns = ['SDR', 'Nota Média']
+
+        # Define as cores baseadas na nota real
+        score_df['Cor'] = score_df['Nota Média'].apply(get_score_color)
+        score_df = score_df.sort_values(by='Nota Média', ascending=False)
+
+        fig_bar = px.bar(
+            score_df,
+            x='SDR',
+            y='Nota Média',
+            color='Cor',
+            color_discrete_map='identity',
+            range_y=[0, 100],
+            height=350
+        )
+        fig_bar.update_traces(
+            width=0.4, # IDEIA #1: Barras mais finas e modernas
+            texttemplate='%{y:.1f}%',
+            textposition='outside'
+        )
+        fig_bar.update_layout(
+            xaxis_title=None,
+            yaxis_title="Nota (%)",
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font_color=THEME['text'],
+            template='plotly_dark',
+            margin=dict(t=50, b=20, l=20, r=20),
+        )
+        # Remove linhas de grade para um visual minimalista
+        fig_bar.update_xaxes(showgrid=False)
+        fig_bar.update_yaxes(showgrid=False)
+        
+        st.plotly_chart(fig_bar, use_container_width=True)        # --- GRÁFICO 1: RANKING SDR (Barras) ---
         # LÓGICA CORRIGIDA: Exclui notas 0% no cálculo da média para o ranking de Assertividade.
         st.subheader("Média de Assertividade por SDR (Excluindo Notas 0%)")
         st.markdown("_Esta média exclui monitorias que resultaram em 0% (NCG) para refletir a consistência de acerto._")
@@ -968,9 +1051,47 @@ def render_dashboard():
             fig_bar.update_yaxes(gridcolor='#444')
             st.plotly_chart(fig_bar, use_container_width=True)
 
-    with col_pie:
         # --- GRÁFICO 2: PRINCIPAIS DESVIOS (Pizza) ---
         st.subheader("Principais Desvios (Top 5)")
+
+        # Filtra os desvios ignorando itens conformes
+        deviation_counts = filtered_df[filtered_df['DesvioPrincipal'] != "Conforme/NSA"]['DesvioPrincipal'].value_counts().head(5)
+        dev_df = deviation_counts.reset_index()
+        dev_df.columns = ['Desvio', 'Contagem']
+
+        if not dev_df.empty:
+            fig_pie = px.pie(
+                dev_df,
+                names='Desvio',
+                values='Contagem',
+                hole=0.5, # Transforma em gráfico de rosca (donut) para um visual mais moderno
+                height=380,
+                color_discrete_sequence=[THEME['error'], THEME['warning'], THEME['accent'], '#444', '#666']
+            )
+
+            fig_pie.update_traces(
+                textinfo='value+percent', # IDEIA #2: Exibe a Quantidade Absoluta e a Porcentagem
+                textposition='outside'    # Tira o texto de dentro das fatias para facilitar a leitura
+            )
+
+            fig_pie.update_layout(
+                paper_bgcolor='rgba(0,0,0,0)',
+                font_color=THEME['text'],
+                template='plotly_dark',
+                showlegend=True, # Adiciona a legenda lateral com as descrições
+                legend=dict(
+                    orientation="v",
+                    yanchor="middle", y=0.5,
+                    xanchor="left", x=1.1
+                ),
+                margin=dict(l=20, r=150, t=50, b=20)
+            )
+            st.plotly_chart(fig_pie, use_container_width=True)
+        else:
+            st.info("Nenhum desvio registrado no período filtrado.")
+
+
+      
 
         deviation_counts = filtered_df[filtered_df['DesvioPrincipal'] != "Conforme/NSA"][
             'DesvioPrincipal'].value_counts()
@@ -982,41 +1103,7 @@ def render_dashboard():
             # Paleta customizada para refletir as cores de Alerta/Crítico
             custom_colors_pie = [THEME['error'], THEME['warning'], THEME['accent'], '#888', '#555']
 
-            fig_pie = px.pie(
-                dev_df,
-                names='Desvio',
-                values='Contagem',
-                title='Distribuição dos Top 5 Desvios',
-                # AUMENTA O FURO INTERNO PARA DEIXAR A FATIA MAIS FINA (SLIM)
-                hole=0.5,
-                # REDUÇÃO DA ALTURA PARA SLIM E MODERNO
-                height=350,
-                color_discrete_sequence=custom_colors_pie
-            )
 
-            # CORREÇÃO CRÍTICA: Ajusta o layout para mover a legenda e margens
-            fig_pie.update_layout(
-                paper_bgcolor='rgba(0,0,0,0)',
-                font_color=THEME['text'],
-                legend_title_text='Desvios',
-                template='plotly_dark',
-                # Mova a legenda para a direita (outside)
-                legend=dict(
-                    orientation="v",
-                    yanchor="top",
-                    y=1,
-                    xanchor="left",
-                    x=1.05
-                ),
-                # Ajuste as margens para dar espaço à legenda e à pizza
-                margin=dict(l=20, r=150, t=50, b=20),
-                height=380  # Altura ajustada após mover a legenda
-            )
-
-            # Ajuste a posição do texto na pizza para melhor visualização
-            fig_pie.update_traces(textposition='inside', textinfo='percent+label')
-
-            st.plotly_chart(fig_pie, use_container_width=True)
         else:
             st.info("Nenhum desvio registrado no período filtrado.")
 
@@ -1058,13 +1145,7 @@ def render_dashboard():
         fig_line.update_yaxes(showgrid=True, gridcolor='#444')
         st.plotly_chart(fig_line, use_container_width=True)
 
-    with col_collab_note:
-        # --- NOVO GRÁFICO 4: COMPARATIVO DE NOTA POR SDR ---
-        st.subheader("Comparativo de Nota Média por Colaborador (Excluindo 0%)")
-        fig_collab_note = create_collab_note_chart(filtered_df)
-        st.plotly_chart(fig_collab_note, use_container_width=True)
 
-    st.markdown("---")
 
     # Ranking de Infratores mantido
     st.subheader("Ranking de Infratores e Desvios")
