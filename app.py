@@ -1351,7 +1351,7 @@ def render_cadastro():
                 try:
                     cursor = conn.cursor()
                     # 1. Salva na tabela de SDRs
-                    cursor.execute("INSERT INTO sdrs (nome, email, telefone) VALUES (?, ?, ?)", 
+                    cursor.execute("INSERT INTO sdrs (nome_exibicao, login_email, senha, nivel) VALUES (?, ?, ?)", 
                                  (nome, email, telefone))
                     
                     # 2. Cria o Login automaticamente na tabela de usuários
