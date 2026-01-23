@@ -48,14 +48,14 @@ def init_db():
     conn = sqlite3.connect('acelera_quality.db', check_same_thread=False)
     cursor = conn.cursor()
     
-     # Tabela de Usuários com permissões granulares
+    # Criando a tabela de usuários com a estrutura completa da imagem
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS usuarios (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nome TEXT NOT NULL,
-            email TEXT UNIQUE NOT NULL,
-            senha TEXT NOT NULL,
-            perfil TEXT, -- 'SDR', 'Closer' ou 'Gestão'
+            nome_exibicao TEXT,
+            login_email TEXT UNIQUE,
+            senha TEXT,
+            nivel TEXT,
             is_atendente BOOLEAN DEFAULT 0,
             esta_de_ferias BOOLEAN DEFAULT 0,
             esta_ativo BOOLEAN DEFAULT 1
@@ -63,7 +63,6 @@ def init_db():
     ''')
     conn.commit()
     return conn
-
 
 
 conn = init_db()
