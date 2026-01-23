@@ -11,7 +11,7 @@ from io import StringIO
 from time import sleep
 import numpy as np
 
-# --- Módulos para Envio de E-mail ---
+# --- Módulos para Envio de E-mail --- RETIRAR
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -39,6 +39,98 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
+import sqlite3
+
+
+
+
+def init_db():
+    conn = sqlite3.connect('acelera_quality.db', check_same_thread=False)
+    cursor = conn.cursor()
+    
+    # Tabela de SDRs
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS sdrs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT UNIQUE,
+            email TEXT UNIQUE,
+            telefone TEXT
+        )
+    ''')
+    
+     # Tabela de Usuários com permissões granulares
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS usuarios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT NOT NULL,
+            email TEXT UNIQUE NOT NULL,
+            senha TEXT NOT NULL,
+            perfil TEXT, -- 'SDR', 'Closer' ou 'Gestão'
+            is_atendente BOOLEAN DEFAULT 0,
+            esta_de_ferias BOOLEAN DEFAULT 0,
+            esta_ativo BOOLEAN DEFAULT 1
+        )
+    ''')
+    conn.commit()
+    return conn
+
+
+
+conn = init_db()
+
+def get_sdr_names_sql():
+    """Busca nomes de SDRs cadastrados no SQLite para usar nos Selectboxes"""
+    try:
+        # Garante que usamos a conexão global 'conn'
+        cursor = conn.cursor()
+        cursor.execute("SELECT nome FROM sdrs ORDER BY nome ASC")
+        rows = cursor.fetchall()
+        # Retorna apenas a lista de nomes. Se o banco estiver vazio, retorna lista vazia.
+        return [row[0] for row in rows]
+    except Exception as e:
+        # Se a tabela ainda não existir, ele retorna vazio sem quebrar o app
+        return []
+
+
+def render_gestao_usuarios():
+    st.title("Gestão de Usuários")
+    
+    # Busca todos os usuários
+    df_users = pd.read_sql_query("SELECT * FROM usuarios", conn)
+    
+    # Cabeçalho com botão de adicionar
+    col_t, col_b = st.columns([4, 1])
+    col_t.subheader("Usuários Ativos")
+    if col_b.button("Adicionar usuário"):
+        st.session_state.show_modal_cadastro = True # Lógica para abrir form
+
+    # Exibição estilo Tabela da Foto
+    for index, row in df_users.iterrows():
+        with st.container():
+            c1, c2, c3, c4, c5, c6 = st.columns([0.5, 2, 2, 1, 1, 1])
+            c1.write(row['id'])
+            c2.write(row['nome'])
+            c3.write(row['email'])
+            
+            # Botões de Liberação (Toggle/Switch)
+            atendente = c4.toggle("Atendente", value=row['is_atendente'], key=f"at_{row['id']}")
+            ferias = c5.toggle("Férias", value=row['esta_de_ferias'], key=f"fe_{row['id']}")
+            ativo = c6.toggle("Ativo", value=row['esta_ativo'], key=f"ac_{row['id']}")
+            
+            # Se houver mudança nos botões, atualiza o banco automaticamente
+            if atendente != row['is_atendente'] or ferias != row['esta_de_ferias'] or ativo != row['esta_ativo']:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE usuarios 
+                    SET is_atendente = ?, esta_de_ferias = ?, esta_ativo = ? 
+                    WHERE id = ?
+                """, (atendente, ferias, ativo, row['id']))
+                conn.commit()
+                st.rerun()
+            st.divider()
+
+
+
 # =========================================================
 # 🔐 LOGIN / AUTENTICAÇÃO (ADICIONADO)
 # =========================================================
@@ -49,7 +141,7 @@ USERS = {
 }
 
 def render_login():
-    st.title("🔐 Login - Acelera Quality SDR")
+    st.title("🔐 Login - Acelera Quality")
 
     with st.form("login_form"):
         user = st.text_input("Usuário")
@@ -99,11 +191,7 @@ CHECKLIST_GROUP_ORDER = [
     "Integração",
 ]
 
-DB_FILE_PATH = 'monitoria_records.json'
-SDR_FILE_PATH = 'sdr_list.json'
-CHECKLIST_FILE_PATH = 'checklist_model.json'
-DISPUTE_FILE_PATH = 'dispute_records.json'
-HOT_BREAD_FILE_PATH = 'hot_bread_records.json'
+
 
 DEFAULT_SDR_LIST = [
     "Paulo","Lane","Emy","Lorena","Daiane","Pablo","Rayane","Maria",
@@ -217,6 +305,9 @@ INITIAL_CHECKLIST = [
      "label": "O atendimento foi iniciado no Selene com mensagem inicial e encerramento formal do ticket?",
      "weight": 4},
 ]
+
+
+
 
 
 # --- 2. LÓGICA DE PERSISTÊNCIA (JSON File Genérica) (Mantida) ---
@@ -646,8 +737,12 @@ def render_monitoria():
     st.subheader("Informações da Interação")
     col1, col2 = st.columns(2)
 
-    sdr_options_with_empty = [''] + sorted(st.session_state.sdr_list)
+    # --- ALTERAÇÃO SQL: Busca nomes direto do banco de dados ---
+    nomes_db = get_sdr_names_sql()
+    sdr_options_with_empty = [''] + nomes_db
+    
     try:
+        # Tenta encontrar o SDR já selecionado na lista nova
         current_index = sdr_options_with_empty.index(form_data.get('sdr', ''))
     except ValueError:
         current_index = 0
@@ -656,6 +751,7 @@ def render_monitoria():
         set_form_field('sdr', st.session_state.sdr_select_key)
 
     with col1:
+        # Selectbox agora alimentado pelo Banco de Dados
         sdr_selected = st.selectbox(
             "SDR Monitorado",
             options=sdr_options_with_empty,
@@ -679,11 +775,9 @@ def render_monitoria():
     current_checklist_state = form_data.get('checklist', {})
     grouped_checklist = group_checklist(st.session_state.checklist_model)
 
-    # Variaveis globais de status
     global STATUS_OPTIONS
     global STATUS_KEYS
 
-    # Loop para renderizar o checklist e garantir a atualização reativa
     for group_name in CHECKLIST_GROUP_ORDER:
         if group_name in grouped_checklist:
             st.markdown(f"---")
@@ -691,10 +785,7 @@ def render_monitoria():
 
             for item in grouped_checklist[group_name]:
                 item_id = item['id']
-
                 current_status_value = current_checklist_state.get(item_id, 'conforme')
-
-                # Obtém a label ('C', 'NC', etc.) a partir do valor ('conforme', 'nc', etc.)
                 current_status_label = next((k for k, v in STATUS_OPTIONS.items() if v == current_status_value), 'C')
                 initial_index = STATUS_KEYS.index(current_status_label)
 
@@ -704,18 +795,14 @@ def render_monitoria():
                 cols[1].radio(
                     "Avaliação",
                     options=STATUS_KEYS,
-                    # CHAVE DO RADIO É O PRÓPRIO ITEM_ID para reatividade direta no session state
                     key=item_id,
                     horizontal=True,
                     index=initial_index,
                     label_visibility='collapsed',
-                    # CALLBACK GARANTE QUE O FORM DATA É ATUALIZADO IMEDIATAMENTE APÓS A MUDANÇA
                     on_change=update_checklist_status,
                     args=(item_id, STATUS_OPTIONS)
                 )
 
-    # Após a renderização, o form_data['checklist'] já está atualizado
-    # graças ao callback de cada radio.
     score_details = calculate_score_details(st.session_state.checklist_model, form_data['checklist'])
 
     st.markdown(
@@ -752,12 +839,18 @@ def render_monitoria():
         st.markdown("---")
         st.subheader("Ações de Feedback")
 
-        sdr_email_placeholder = st.text_input("E-mail do SDR",
-                                              value=f"{form_data['sdr'].lower().replace(' ', '.')}@empresa.com",
-                                              key='sdr_email_key')
+        # Busca e-mail do banco de dados (Opcional, mas recomendado)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT email FROM sdrs WHERE nome = ?", (form_data['sdr'],))
+            row = cursor.fetchone()
+            default_email = row[0] if row and row[0] else f"{form_data['sdr'].lower().replace(' ', '.')}@empresa.com"
+        except:
+            default_email = f"{form_data['sdr'].lower().replace(' ', '.')}@empresa.com"
+
+        sdr_email_placeholder = st.text_input("E-mail do SDR", value=default_email, key='sdr_email_key')
 
         col_dl, col_email = st.columns(2)
-
         col_dl.download_button(
             label="Download/Copiar Feedback Completo",
             data=form_data['feedback_aplicado'] + "\n\nPlano de Ação do Monitor:\n" + form_data['planoAcaoMonitor'],
@@ -777,14 +870,12 @@ def render_monitoria():
                     f"{form_data['feedback_aplicado']}"
                 )
                 subject = f"[Monitoria] Feedback de Qualidade - {form_data['sdr']} ({score_details['finalNota']:.2f}%)"
-
                 with st.spinner(f"Enviando feedback para {form_data['sdr']}..."):
                     send_feedback_email(form_data['sdr'], sdr_email_placeholder, subject, full_body)
 
     st.markdown("---")
     if st.button("SALVAR MONITORIA E FINALIZAR", use_container_width=True, type='primary'):
         save_monitoria_record(score_details)
-
 
 # --- Funções de Ajuda para Gráfico (LÓGICA DE CORES: VERDE -> LARANJA) ---
 
@@ -859,7 +950,6 @@ def create_collab_note_chart(df_filtered):
     return fig
 
 
-def render_dashboard():
     # Inicializa o DataFrame a partir do estado da sessão
     records = st.session_state.records
     if not records:
@@ -1173,82 +1263,254 @@ def render_dashboard():
                  use_container_width=True)
 
 
-def render_historico():
-    st.title("Histórico de Monitorias")
-
-    df = pd.DataFrame(st.session_state.records)
-
-    if df.empty:
-        st.info("Nenhum registo de monitoria encontrado.")
+def render_dashboard():
+    # 1. CARREGAMENTO DOS DADOS VIA SQL
+    try:
+        query = "SELECT * FROM monitorias"
+        df = pd.read_sql_query(query, conn)
+    except Exception as e:
+        st.error(f"Erro ao acessar o banco de dados: {e}")
         return
 
-    df['Pontuação'] = df['pontuacoes'].apply(lambda x: f"{x:.2f}%")
-    df['Desvios'] = df['desviosCount']
+    if df.empty:
+        st.title("Dashboard de Performance SDR - Qualidade")
+        st.info("Nenhum dado de monitoria encontrado no banco de dados.")
+        return
 
-    if 'reincidenciaCount' in df.columns:
-        df['Reincidência'] = df['reincidenciaCount'].apply(lambda x: f"SIM ({x})" if x > 1 else "NÃO (0)")
+    # --- 🛡️ LÓGICA DE TRAVAMENTO DE PERFIL (SDR SÓ VÊ O DELE) ---
+    # Se o usuário não for do time de gestão, filtramos o DF antes de qualquer cálculo
+    if st.session_state.user not in ['admin', 'qualidade']:
+        df = df[df['sdr'] == st.session_state.user]
+        
+        if df.empty:
+            st.warning(f"Olá {st.session_state.user}, você ainda não possui monitorias registradas.")
+            return
+        st.sidebar.success(f"Visão Restrita: {st.session_state.user}")
     else:
-        df['Reincidência'] = "NÃO (0)"
+        st.sidebar.info("Visão Geral: Administrador")
 
-    columns_to_display = ['data', 'sdr', 'Pontuação', 'Reincidência', 'Desvios', 'crmLink', 'seleneLink']
+    # --- PRÉ-PROCESSAMENTO ---
+    df['data'] = pd.to_datetime(df['data'])
+    df['MesAno'] = df['data'].dt.to_period('M').astype(str)
 
-    st.dataframe(df[columns_to_display], use_container_width=True)
+    # 2. TÍTULO E MÉTRICAS GERAIS
+    st.markdown(f"<h1 class='title'>Dashboard de Performance</h1>", unsafe_allow_html=True)
+    
+    # Cálculos das métricas baseados no DF (já filtrado ou não)
+    avg_score = df['nota'].mean()
+    total_records = len(df)
+    ncg_count = len(df[df['nota'] == 0])
 
-    csv_output = StringIO()
-    df.to_csv(csv_output, index=False)
-    csv_data = csv_output.getvalue()
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Média de Assertividade", f"{avg_score:.2f}%", 
+                  delta=f"{avg_score - 85:.1f}%" if avg_score >= 85 else f"{avg_score - 85:.1f}%",
+                  delta_color="normal" if avg_score >= 85 else "inverse")
+    with col2:
+        st.metric("Total de Monitorias", total_records)
+    with col3:
+        st.metric("NC Graves (Nota 0)", ncg_count)
 
-    st.download_button(
-        label="Gerar Relatório CSV Completo",
-        data=csv_data,
-        file_name='relatorio_monitoria_completo.csv',
-        mime='text/csv',
-    )
+    st.markdown("---")
+
+    # 3. GRÁFICOS (Se adaptam automaticamente ao filtro do SDR)
+    col_main, col_side = st.columns([2, 1])
+
+    with col_main:
+        st.subheader("Evolução da Nota Média")
+        # Agrupamento por Data para ver a tendência
+        trend_df = df.groupby('data')['nota'].mean().reset_index()
+        fig_trend = px.line(trend_df, x='data', y='nota', markers=True, 
+                             line_shape='spline', color_discrete_sequence=[THEME['accent']])
+        fig_trend.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', 
+                                font_color=THEME['text'], height=300)
+        st.plotly_chart(fig_trend, use_container_width=True)
+
+    with col_side:
+        st.subheader("Distribuição de Notas")
+        # Mostra se o SDR está mais no Verde, Amarelo ou Vermelho
+        fig_hist = px.histogram(df, x="nota", nbins=10, color_discrete_sequence=[THEME['warning']])
+        fig_hist.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', 
+                               font_color=THEME['text'], height=300, showlegend=False)
+        st.plotly_chart(fig_hist, use_container_width=True)
+
+    # 4. RANKING (Só aparece se for Admin, para o SDR não faz sentido ver ranking de um homem só)
+    if st.session_state.user in ['admin', 'qualidade']:
+        st.markdown("---")
+        st.subheader("Ranking Comparativo do Time")
+        ranking_df = df.groupby('sdr')['nota'].mean().sort_values(ascending=False).reset_index()
+        fig_rank = px.bar(ranking_df, x='sdr', y='nota', color='nota',
+                          color_continuous_scale=[THEME['error'], THEME['warning'], THEME['success']])
+        st.plotly_chart(fig_rank, use_container_width=True)
+    
+    # 5. TABELA DE REGISTROS RECENTES
+    st.subheader("Últimas Monitorias")
+    st.dataframe(df[['data', 'sdr', 'nota', 'crm_link']].sort_values(by='data', ascending=False), 
+                 use_container_width=True, hide_index=True)
+
 
 
 def render_cadastro():
-    st.title("Cadastro e Gestão de SDRs")
-
-    st.subheader("Adicionar Novo SDR")
-
-    with st.form(key='sdr_add_form'):
-        new_sdr_name = st.text_input("Nome do Novo SDR",
-                                     value=st.session_state.new_sdr_name_value,
-                                     key='new_sdr_name_widget_key')
-
-        submitted = st.form_submit_button("Adicionar SDR")
-
-        if submitted:
-            name_to_add = st.session_state.new_sdr_name_widget_key.strip()
-
-            if not name_to_add:
-                st.error("Nome inválido. O campo não pode ser vazio.")
-            elif name_to_add in st.session_state.sdr_list:
-                st.warning("SDR já existe.")
+    st.title("👥 Cadastro de SDR e Criação de Acesso")
+    
+    with st.form("novo_sdr_form"):
+        nome = st.text_input("Nome Completo do SDR")
+        email = st.text_input("E-mail (Será o Login)")
+        telefone = st.text_input("Telefone (Será a Senha Inicial)")
+        
+        if st.form_submit_button("Cadastrar e Gerar Acesso"):
+            if nome and email and telefone:
+                try:
+                    cursor = conn.cursor()
+                    # 1. Salva na tabela de SDRs
+                    cursor.execute("INSERT INTO sdrs (nome, email, telefone) VALUES (?, ?, ?)", 
+                                 (nome, email, telefone))
+                    
+                    # 2. Cria o Login automaticamente na tabela de usuários
+                    # Definimos o nível como 'sdr' para que ele tenha visão restrita
+                    cursor.execute("""
+                        INSERT INTO usuarios (nome_exibicao, login_email, senha, nivel) 
+                        VALUES (?, ?, ?, ?)
+                    """, (nome, email, telefone, 'sdr'))
+                    
+                    conn.commit()
+                    st.success(f"✅ SDR {nome} cadastrado! Login: {email} | Senha: {telefone}")
+                except sqlite3.IntegrityError:
+                    st.error("❌ Erro: Este E-mail ou Nome já está cadastrado.")
             else:
-                st.session_state.sdr_list.append(name_to_add)
-                st.session_state.sdr_list.sort()
+                st.warning("⚠️ Preencha todos os campos.")
 
-                save_data_to_json(st.session_state.sdr_list, SDR_FILE_PATH)
 
-                st.success(f"SDR {name_to_add} adicionado e salvo.")
+def verificar_login(email_digitado, senha_digitada):
+    cursor = conn.cursor()
+    cursor.execute("SELECT nome_exibicao, nivel FROM usuarios WHERE login_email = ? AND senha = ?", 
+                   (email_digitado, senha_digitada))
+    usuario = cursor.fetchone()
+    
+    if usuario:
+        # usuario[0] é o nome, usuario[1] é o nível (admin/sdr)
+        st.session_state.logged_in = True
+        st.session_state.user = usuario[0] 
+        st.session_state.nivel = usuario[1]
+        return True
+    return False
 
-                st.session_state.new_sdr_name_value = ""
-                st.rerun()
 
-    st.subheader("Lista Atual de SDRs")
+def render_gestao_sdrs():
+    st.title("👥 Gestão de Time (SDRs)")
+    st.markdown("Visualize, edite ou remova membros do time de SDRs.")
 
-    sdr_to_remove = st.selectbox("Selecione SDR para Remover", [''] + sorted(st.session_state.sdr_list))
+    # 1. Busca SDRs do Banco
+    try:
+        query = "SELECT id, nome, email, telefone FROM sdrs ORDER BY nome ASC"
+        df_sdrs = pd.read_sql_query(query, conn)
+    except Exception as e:
+        st.error(f"Erro ao carregar SDRs: {e}")
+        return
 
-    if sdr_to_remove and st.button(f"Remover {sdr_to_remove}", type='secondary'):
-        st.session_state.sdr_list.remove(sdr_to_remove)
+    if df_sdrs.empty:
+        st.info("Nenhum SDR cadastrado no sistema.")
+        return
 
-        save_data_to_json(st.session_state.sdr_list, SDR_FILE_PATH)
+    # 2. Exibição em formato de tabela
+    st.subheader("Lista de SDRs Ativos")
+    
+    # Criamos colunas para os botões de ação na tabela
+    for index, row in df_sdrs.iterrows():
+        with st.expander(f"👤 {row['nome']}"):
+            col1, col2, col3 = st.columns([2, 2, 1])
+            
+            with col1:
+                novo_email = st.text_input("E-mail", value=row['email'], key=f"email_{row['id']}")
+            with col2:
+                novo_tel = st.text_input("Telefone", value=row['telefone'], key=f"tel_{row['id']}")
+            
+            with col3:
+                st.write("") # Alinhamento
+                st.write("") # Alinhamento
+                btn_col1, btn_col2 = st.columns(2)
+                
+                # Botão SALVAR EDIÇÃO
+                if btn_col1.button("💾", key=f"save_{row['id']}", help="Salvar Alterações"):
+                    try:
+                        cursor = conn.cursor()
+                        # Atualiza na tabela SDRs
+                        cursor.execute("UPDATE sdrs SET email = ?, telefone = ? WHERE id = ?", (novo_email, novo_tel, row['id']))
+                        # Atualiza na tabela Usuários (para o Login também mudar se o e-mail mudar)
+                        cursor.execute("UPDATE usuarios SET login_email = ?, senha = ? WHERE nome_exibicao = ?", (novo_email, novo_tel, row['nome']))
+                        conn.commit()
+                        st.success("Dados atualizados!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao atualizar: {e}")
 
-        st.success(f"SDR {sdr_to_remove} removido e salvo.")
-        st.rerun()
+                # Botão EXCLUIR
+                if btn_col2.button("🗑️", key=f"del_{row['id']}", help="Excluir SDR"):
+                    try:
+                        cursor = conn.cursor()
+                        cursor.execute("DELETE FROM sdrs WHERE id = ?", (row['id'],))
+                        cursor.execute("DELETE FROM usuarios WHERE nome_exibicao = ?", (row['nome'],))
+                        conn.commit()
+                        st.warning(f"SDR {row['nome']} removido.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao remover: {e}")
 
-    st.dataframe(pd.DataFrame({'SDR': sorted(st.session_state.sdr_list)}), use_container_width=True)
+
+
+def render_historico():
+    st.title("📜 Histórico de Monitorias (SQL)")
+
+    # 1. CARREGAMENTO DOS DADOS DO BANCO SQL
+    try:
+        # Puxamos todos os dados da tabela monitorias
+        query = "SELECT * FROM monitorias ORDER BY data DESC, hora DESC"
+        df = pd.read_sql_query(query, conn)
+    except Exception as e:
+        st.error(f"Erro ao carregar histórico: {e}")
+        return
+
+    if df.empty:
+        st.info("Nenhum registro de monitoria encontrado no banco de dados.")
+        return
+
+    # --- 🛡️ FILTRO DE PERFIL (SDR SÓ VÊ O SEU HISTÓRICO) ---
+    if st.session_state.user not in ['admin', 'qualidade']:
+        df = df[df['sdr'] == st.session_state.user]
+        if df.empty:
+            st.warning("Você ainda não possui monitorias registradas.")
+            return
+
+    # 2. FORMATAÇÃO PARA EXIBIÇÃO
+    # Criamos uma cópia para não alterar o DF original (usado no CSV)
+    df_view = df.copy()
+    
+    # Formata a nota para aparecer com %
+    df_view['nota'] = df_view['nota'].apply(lambda x: f"{x:.2f}%")
+    
+    # Renomeia colunas para ficar visualmente melhor no sistema
+    df_view = df_view.rename(columns={
+        'data': 'Data',
+        'sdr': 'SDR',
+        'nota': 'Pontuação',
+        'crm_link': 'Link CRM',
+        'plano_acao': 'Plano de Ação'
+    })
+
+    # 3. EXIBIÇÃO DA TABELA
+    # Selecionamos apenas as colunas principais para a tabela não ficar poluída
+    colunas_visiveis = ['Data', 'SDR', 'Pontuação', 'Link CRM', 'Plano de Ação']
+    st.dataframe(df_view[colunas_visiveis], use_container_width=True, hide_index=True)
+
+    # 4. EXPORTAÇÃO (CSV)
+    st.markdown("---")
+    csv = df.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="📥 Baixar Relatório Completo (CSV)",
+        data=csv,
+        file_name='historico_monitorias_acelera.csv',
+        mime='text/csv',
+    )
 
 
 def render_editor():
@@ -1666,6 +1928,8 @@ def main_app():
     initialize_session_state()
 
     # --- Configuração do Sidebar (Navegação Original) ---
+
+    
     with st.sidebar:
         # LOGO REMOVIDO CONFORME SOLICITADO
 
@@ -1694,6 +1958,7 @@ def main_app():
         if st.button("EDITAR CHECKLIST", use_container_width=True):
             st.session_state.current_page = 'editor'
 
+
     # --- Renderização da Página Atual ---
     if st.session_state.current_page == 'dashboard':
         render_dashboard()
@@ -1711,6 +1976,69 @@ def main_app():
     elif st.session_state.current_page == 'hot_bread':
         render_hot_bread()
 
+
+def save_monitoria_record(score_details):
+    form = get_current_form()
+    
+    # Validação básica
+    if not form['sdr']:
+        st.error("Por favor, selecione o SDR antes de salvar.")
+        return
+
+    try:
+        # 1. Preparar os dados para o SQL
+        # Convertemos o dicionário do checklist em uma string JSON para salvar em uma única coluna
+        checklist_data = json.dumps(form['checklist'], ensure_ascii=False)
+        
+        # 2. Conectar ao Banco de Dados
+        cursor = conn.cursor()
+        
+        # 3. Comando SQL INSERT
+        # Os nomes das colunas devem ser exatamente iguais aos criados no init_db()
+        sql = '''
+            INSERT INTO monitorias (
+                sdr, 
+                data, 
+                hora, 
+                crm_link, 
+                selene_link, 
+                nota, 
+                observacoes, 
+                plano_acao, 
+                checklist_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        '''
+        
+        # Extraindo valores do formulário e do cálculo de nota
+        valores = (
+            form['sdr'],
+            datetime.now().strftime('%Y-%m-%d'),
+            datetime.now().strftime('%H:%M:%S'),
+            form['crmLink'],
+            form['seleneLink'],
+            score_details['finalNota'],
+            form['observacoes'],
+            form['planoAcaoMonitor'],
+            checklist_data
+        )
+        
+        # 4. Executar e Salvar
+        cursor.execute(sql, valores)
+        conn.commit()
+        
+        st.success(f"✅ Monitoria de {form['sdr']} salva com sucesso no Banco de Dados SQL!")
+        
+        # 5. Limpar formulário e redirecionar
+        st.session_state.monitoria_form = reset_monitoria_form(form['sdr'])
+        st.session_state.current_page = 'dashboard'
+        
+        # Pequena pausa para o usuário ver a mensagem de sucesso antes de recarregar
+        sleep(1)
+        st.rerun()
+
+    except Exception as e:
+        st.error(f"❌ Erro crítico ao salvar no SQL: {e}")
+        # O commit não é executado em caso de erro, protegendo a integridade do banco
 
 if __name__ == '__main__':
     main_app()
