@@ -97,9 +97,8 @@ def render_gestao_usuarios():
     for index, row in df_users.iterrows():
         with st.container():
             c1, c2, c3, c4, c5, c6 = st.columns([0.5, 2, 2, 1, 1, 1])
-            c1.write(row['id'])
-            c2.write(row['nome'])
-            c3.write(row['email'])
+            c2.write(row['nome_exibicao']) # Em vez de row['nome']
+            c3.write(row['login_email'])   # Em vez de row['email']
             
             # Botões de Liberação (Toggle/Switch)
             atendente = c4.toggle("Atendente", value=row['is_atendente'], key=f"at_{row['id']}")
