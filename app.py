@@ -48,7 +48,7 @@ def init_db():
     conn = sqlite3.connect('acelera_quality.db', check_same_thread=False)
     cursor = conn.cursor()
     
-    # Criando a tabela de usuários com a estrutura completa da imagem
+    # Tabela de Usuários
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS usuarios (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -61,9 +61,35 @@ def init_db():
             esta_ativo BOOLEAN DEFAULT 1
         )
     ''')
+
+    # ADICIONE ESTE BLOCO: Tabela de Monitorias
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS monitorias (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sdr TEXT,
+            data TEXT,
+            hora TEXT,
+            crm_link TEXT,
+            selene_link TEXT,
+            nota REAL,
+            observacoes TEXT,
+            plano_acao TEXT,
+            checklist_json TEXT
+        )
+    ''')
+    
+    # Tabela de SDRs (Necessária para a função get_sdr_names_sql)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS sdrs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT UNIQUE,
+            email TEXT,
+            telefone TEXT
+        )
+    ''')
+    
     conn.commit()
     return conn
-
 
 conn = init_db()
 
