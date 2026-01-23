@@ -48,16 +48,6 @@ def init_db():
     conn = sqlite3.connect('acelera_quality.db', check_same_thread=False)
     cursor = conn.cursor()
     
-    # Tabela de SDRs
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS sdrs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nome TEXT UNIQUE,
-            email TEXT UNIQUE,
-            telefone TEXT
-        )
-    ''')
-    
      # Tabela de Usuários com permissões granulares
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS usuarios (
