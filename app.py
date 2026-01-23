@@ -45,10 +45,11 @@ import sqlite3
 
 
 def init_db():
-    conn = sqlite3.connect('acelera_quality.db', check_same_thread=False)
+    # Conexão com o banco
+    conn = sqlite3.connect('acelera_quality_v4.db', check_same_thread=False) # Mudei o nome para v4
     cursor = conn.cursor()
     
-    # Tabela de Usuários
+    # Criando a tabela de usuários com a estrutura completa
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS usuarios (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -56,13 +57,23 @@ def init_db():
             login_email TEXT UNIQUE,
             senha TEXT,
             nivel TEXT,
-            is_atendente BOOLEAN DEFAULT 0,
-            esta_de_ferias BOOLEAN DEFAULT 0,
-            esta_ativo BOOLEAN DEFAULT 1
+            is_atendente INTEGER DEFAULT 0,
+            esta_de_ferias INTEGER DEFAULT 0,
+            esta_ativo INTEGER DEFAULT 1
         )
     ''')
 
-    # ADICIONE ESTE BLOCO: Tabela de Monitorias
+    # Tabela de SDRs (Dados Cadastrais)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS sdrs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT UNIQUE,
+            email TEXT UNIQUE,
+            telefone TEXT
+        )
+    ''')
+
+    # Tabela de Monitorias
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS monitorias (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,21 +88,12 @@ def init_db():
             checklist_json TEXT
         )
     ''')
-    
-    # Tabela de SDRs (Necessária para a função get_sdr_names_sql)
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS sdrs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nome TEXT UNIQUE,
-            email TEXT,
-            telefone TEXT
-        )
-    ''')
-    
     conn.commit()
     return conn
 
 conn = init_db()
+
+
 
 def get_sdr_names_sql():
     """Busca nomes de SDRs cadastrados no SQLite para usar nos Selectboxes"""
