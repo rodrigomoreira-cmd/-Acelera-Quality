@@ -1376,12 +1376,14 @@ def render_cadastro():
             if nome and email and telefone:
                 try:
                     cursor = conn.cursor()
-                    # 1. Salva na tabela de SDRs
-                    cursor.execute("INSERT INTO sdrs (nome_exibicao, login_email, senha, nivel) VALUES (?, ?, ?)", 
-                                 (nome, email, telefone))
                     
-                    # 2. Cria o Login automaticamente na tabela de usuários
-                    # Definimos o nível como 'sdr' para que ele tenha visão restrita
+                    # 1. Salva na tabela de SDRs (usando os nomes de coluna corretos)
+                    cursor.execute("""
+                        INSERT INTO sdrs (nome, email, telefone) 
+                        VALUES (?, ?, ?)
+                    """, (nome, email, telefone))
+                    
+                    # 2. Cria o Login na tabela de usuários
                     cursor.execute("""
                         INSERT INTO usuarios (nome_exibicao, login_email, senha, nivel) 
                         VALUES (?, ?, ?, ?)
@@ -1391,6 +1393,8 @@ def render_cadastro():
                     st.success(f"✅ SDR {nome} cadastrado! Login: {email} | Senha: {telefone}")
                 except sqlite3.IntegrityError:
                     st.error("❌ Erro: Este E-mail ou Nome já está cadastrado.")
+                except sqlite3.OperationalError as e:
+                    st.error(f"❌ Erro de estrutura no Banco de Dados: {e}")
             else:
                 st.warning("⚠️ Preencha todos os campos.")
 
