@@ -5,9 +5,9 @@ import pandas as pd
 
 @st.cache_resource
 def init_connection() -> Client:
-    # O código busca pelo NOME definido no segredo (Passo 1)
-    url = st.secrets["SUPABASE_URL"] 
-    key = st.secrets["SUPABASE_KEY"]
+    # Acessando através da seção [connections.supabase]
+    url = st.secrets["connections"]["supabase"]["SUPABASE_URL"]
+    key = st.secrets["connections"]["supabase"]["SUPABASE_KEY"]
     return create_client(url, key)
 
 supabase = init_connection()
