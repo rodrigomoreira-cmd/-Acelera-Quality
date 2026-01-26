@@ -2,9 +2,10 @@ import streamlit as st
 from supabase import create_client, Client
 import pandas as pd
 
+
 @st.cache_resource
-def init_connection():
-    # O rótulo "SUPABASE_URL" deve ser igual ao que você colou na caixa preta
+def init_connection() -> Client:
+    # O código busca pelo NOME definido no segredo (Passo 1)
     url = st.secrets["SUPABASE_URL"] 
     key = st.secrets["SUPABASE_KEY"]
     return create_client(url, key)
