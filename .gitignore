@@ -1,0 +1,4 @@
+*.db
+.streamlit/
+.modularização
+.antigo
