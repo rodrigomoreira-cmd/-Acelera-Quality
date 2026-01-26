@@ -301,6 +301,7 @@ def render_cadastro():
 def main():
     st.set_page_config(layout="wide", page_title="Acelera Quality")
 
+    # 1. Gerenciamento de Autenticação
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
 
@@ -308,26 +309,53 @@ def main():
         render_login()
         st.stop()
 
+    # 2. Sidebar e Navegação
     with st.sidebar:
         st.markdown(f"### 👤 {st.session_state.user}")
-        st.write(f"Nível: {st.session_state.nivel.upper()}")
+        # .get() evita erro caso o nível não esteja definido
+        nivel_user = st.session_state.get('nivel', 'sdr').upper()
+        st.write(f"Nível: {nivel_user}")
         st.divider()
-        page = st.radio("Navegação", ["DASHBOARD", "MONITORIA", "HISTÓRICO", "CADASTRO"])
+
+        # Define as opções de menu baseadas no nível de acesso
+        menu_options = ["DASHBOARD", "MONITORIA", "HISTÓRICO"]
+        if nivel_user == "ADMIN":
+            menu_options.append("CADASTRO")
+
+        page = st.radio("Navegação", menu_options)
+        
         st.divider()
         if st.button("🚪 Sair"):
             st.session_state.authenticated = False
             st.rerun()
 
+    # 3. Roteamento de Páginas (Corrigido)
     if page == "DASHBOARD": 
         render_dashboard()
+    
     elif page == "MONITORIA": 
         render_monitoria()
+    
     elif page == "CADASTRO": 
-        render_monitoria()
+        # CORREÇÃO: Chamando a função correta de cadastro
+        render_cadastro() 
+    
     elif page == "HISTÓRICO":
-        st.title("📜 Histórico")
+        render_historico_tela() # Centralizado em uma função para manter o main limpo
+
+# Função auxiliar para o histórico
+def render_historico_tela():
+    st.title("📜 Histórico de Monitorias")
+    with st.spinner("Carregando dados do Supabase..."):
         df = get_all_records_db()
-        st.dataframe(df, use_container_width=True)
+        if not df.empty:
+            # Filtro de visão para SDR (vê apenas o dele)
+            if st.session_state.get('nivel') == 'sdr':
+                df = df[df['sdr'] == st.session_state.user]
+            
+            st.dataframe(df, use_container_width=True, hide_index=True)
+        else:
+            st.info("Nenhum registro encontrado no banco de dados.")
 
 if __name__ == "__main__":
     main()
