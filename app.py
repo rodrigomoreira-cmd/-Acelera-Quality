@@ -200,6 +200,100 @@ def render_dashboard():
     fig = px.line(trend, x='data', y='nota', title="Evolução das Notas", markers=True)
     st.plotly_chart(fig, use_container_width=True)
 
+def render_cadastro():
+    st.title("👥 Gestão de SDRs")
+
+    # --- PARTE 1: FORMULÁRIO DE CADASTRO ---
+    st.subheader("Cadastrar Novo SDR")
+    with st.form("novo_sdr_form", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        nome = col1.text_input("Nome Completo")
+        email = col2.text_input("E-mail de Login")
+        
+        # Usaremos o telefone como senha inicial padrão
+        telefone = st.text_input("Telefone/WhatsApp (será a senha inicial)")
+        
+        # BOTÃO PARA CADASTRAR
+        btn_cadastrar = st.form_submit_button("CADASTRAR SDR")
+
+        if btn_cadastrar:
+            if nome and email and telefone:
+                try:
+                    # Insere na tabela de SDRs (para a lista da monitoria)
+                    supabase.table("sdrs").insert({
+                        "nome": nome, 
+                        "email": email, 
+                        "telefone": telefone
+                    }).execute()
+                    
+                    # Cria o acesso na tabela de usuários para login
+                    supabase.table("usuarios").insert({
+                        "nome_exibicao": nome,
+                        "login_email": email,
+                        "senha": telefone,
+                        "nivel": "sdr",
+                        "esta_ativo": True
+                    }).execute()
+                    
+                    st.success(f"✅ {nome} cadastrado com sucesso!")
+                    st.cache_data.clear() # Limpa o cache para atualizar a lista na hora
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao salvar: {e}")
+            else:
+                st.warning("⚠️ Preencha todos os campos antes de cadastrar.")
+
+    st.divider()
+
+    # --- PARTE 2: REGISTRO DOS CADASTROS (LISTA) ---
+    st.subheader("SDRs Cadastrados")
+    try:
+        # Busca os registros diretamente do Supabase
+        res = supabase.table("sdrs").select("nome, email, telefone, created_at").order("nome").execute()
+        if res.data:
+            df_sdrs = pd.DataFrame(res.data)
+            # Renomeia as colunas para ficar amigável na tela
+            df_sdrs.columns = ["Nome", "E-mail", "Telefone", "Data de Cadastro"]
+            st.dataframe(df_sdrs, use_container_width=True)
+        else:
+            st.info("Nenhum SDR cadastrado ainda.")
+    except Exception as e:
+        st.error(f"Erro ao carregar lista: {e}")
+    st.title("👥 Cadastro de SDR e Criação de Acesso")
+    
+    with st.form("novo_sdr_form", clear_on_submit=True):
+        nome = st.text_input("Nome Completo do SDR")
+        email = st.text_input("E-mail (Será o Login)")
+        telefone = st.text_input("Telefone (Será a Senha Inicial)")
+        
+        if st.form_submit_button("Cadastrar e Gerar Acesso"):
+            if nome and email and telefone:
+                try:
+                    # 1. Salva na tabela de SDRs
+                    supabase.table("sdrs").insert({
+                        "nome": nome, 
+                        "email": email, 
+                        "telefone": telefone
+                    }).execute()
+                    
+                    # 2. Cria o Usuário para Login (Nível SDR)
+                    supabase.table("usuarios").insert({
+                        "nome_exibicao": nome,
+                        "login_email": email,
+                        "senha": telefone,
+                        "nivel": "sdr",
+                        "esta_ativo": True
+                    }).execute()
+                    
+                    st.success(f"✅ SDR {nome} cadastrado com sucesso!")
+                    st.cache_data.clear() # Limpa o cache para atualizar as listas
+                    sleep(1)
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao cadastrar: {e}")
+            else:
+                st.warning("⚠️ Preencha todos os campos.")
+
 # =========================================================
 # 7. EXECUÇÃO PRINCIPAL
 # =========================================================
@@ -227,6 +321,8 @@ def main():
     if page == "DASHBOARD": 
         render_dashboard()
     elif page == "MONITORIA": 
+        render_monitoria()
+    elif page == "CADASTRO": 
         render_monitoria()
     elif page == "HISTÓRICO":
         st.title("📜 Histórico")
