@@ -39,10 +39,6 @@ CHECKLIST_MODEL = [
 
 # 3. FUNÇÃO DE CÁLCULO
 def calculate_score_details(checklist_model, checklist_state):
-    """
-    Calcula a nota final da monitoria com base no checklist e status.
-    Regra: Subtrai o peso de cada NC e zera a nota se houver NC Grave.
-    """
     total_score = 100.0
     weight_deducted = 0
     nc_count = 0
@@ -57,7 +53,6 @@ def calculate_score_details(checklist_model, checklist_state):
         if val is None or val == 'nsa':
             continue
 
-        # Nota: Ajustado para verificar 'nc grave' conforme sua lógica de botões
         if val == 'nc' or val == 'nc grave':
             nc_count += 1
             nc_items.append(item)
@@ -68,10 +63,7 @@ def calculate_score_details(checklist_model, checklist_state):
                 ncg_count += 1
                 has_ncg = True
 
-    if total_score < 0:
-        total_score = 0.0
-
-    final_nota = total_score
+    final_nota = max(0.0, total_score)
     if has_ncg:
         final_nota = 0.0
 
