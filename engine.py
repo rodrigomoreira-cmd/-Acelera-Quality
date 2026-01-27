@@ -57,13 +57,13 @@ def calculate_score_details(checklist_model, checklist_state):
         if val is None or val == 'nsa':
             continue
 
-        if val == 'nc' or val == 'nc_grave':
+        if val == 'nc' or val == 'nc grave':
             nc_count += 1
             nc_items.append(item)
             weight_deducted += weight
             total_score -= weight
 
-            if val == 'nc_grave':
+            if val == 'nc grave':
                 ncg_count += 1
                 has_ncg = True
 
