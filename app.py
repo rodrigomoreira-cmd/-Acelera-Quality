@@ -7,6 +7,28 @@ from contestacao import render_contestacao
 from database import get_all_records_db
 
 def main():
+    st.markdown(f"""
+    <style>
+    /* Fundo principal e da barra lateral */
+    .stApp, [data-testid="stSidebar"] {{
+        background-color: {THEME['bg']};
+        color: {THEME['text']};
+    }}
+    
+    /* Botões Primários (Laranja) */
+    div.stButton > button:first-child {{
+        background-color: {THEME['accent']};
+        color: white;
+        border: None;
+    }}
+    
+    /* Tabelas e Dataframes */
+    [data-testid="stDataFrame"] {{
+        background-color: {THEME['card']};
+    }}
+    </style>
+    """, unsafe_allow_html=True)
+
     st.set_page_config(layout="wide", page_title="Acelera Quality")
 
     if "authenticated" not in st.session_state:
