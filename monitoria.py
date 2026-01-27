@@ -29,7 +29,7 @@ def render_monitoria():
             for item in itens_grupo:
                 respostas[item['id']] = st.radio(
                     label=item['label'],
-                    options=["conforme", "nc", "nc_grave", "nsa"],
+                    options=["conforme", "nc", "nc grave", "nsa"],
                     index=0,
                     horizontal=True,
                     key=item['id']
