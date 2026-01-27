@@ -2,13 +2,13 @@
 
 # 1. CONSTANTES E TEMA
 THEME = {
-    "bg": "#111827", 
-    "accent": "#ff7a00", 
-    "card": "#1f2937", 
-    "text": "#f3f4f6", 
-    "error": "#f87171",
-    "warning": "#facc15", 
-    "success": "#4caf50"
+    "bg": "#000000",       # Preto (Fundo)
+    "accent": "#FF7A00",   # Laranja (Destaques e Botões)
+    "card": "#1A1A1A",     # Cinza muito escuro (Para contraste com o preto)
+    "text": "#FFFFFF",     # Branco (Textos)
+    "error": "#FF4B4B",    # Vermelho (Mantido para alertas críticos)
+    "warning": "#FF7A00",  # Laranja (Para alertas médios)
+    "success": "#FFFFFF"   # Branco (Para confirmações positivas)
 }
 
 ASSERTIVITY_CUTOFF = 85
