@@ -3,85 +3,70 @@ from auth import render_login
 from dashboard import render_dashboard
 from monitoria import render_monitoria
 from cadastro import render_cadastro
+from contestacao import render_contestacao # Novo import
 from database import get_all_records_db
 
 def main():
     st.set_page_config(layout="wide", page_title="Acelera Quality")
 
-    # 1. GERENCIAMENTO DE ESTADO
-    # Inicializa a autenticação
+    # Gerenciamento de Estado
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
-    
-    # Inicializa a página padrão se não houver uma selecionada
     if "current_page" not in st.session_state:
         st.session_state.current_page = "DASHBOARD"
 
-    # 2. BLOQUEIO DE LOGIN
     if not st.session_state.authenticated:
         render_login()
         st.stop()
 
-    # 3. SIDEBAR COM BOTÕES
+    # Sidebar com Botões
     with st.sidebar:
         st.markdown(f"### 👤 {st.session_state.user}")
         nivel = st.session_state.get('nivel', 'sdr').upper()
         st.write(f"Nível: {nivel}")
         st.divider()
 
-        st.markdown("### Navegação")
-
-        # Botão Dashboard
-        if st.button("📊 DASHBOARD", use_container_width=True, 
-                     type="primary" if st.session_state.current_page == "DASHBOARD" else "secondary"):
-            st.session_state.current_page = "DASHBOARD"
-            st.rerun()
-
-        # Botão Monitoria
-        if st.button("📝 MONITORIA", use_container_width=True,
-                     type="primary" if st.session_state.current_page == "MONITORIA" else "secondary"):
-            st.session_state.current_page = "MONITORIA"
-            st.rerun()
-
-        # Botão Histórico
-        if st.button("📜 HISTÓRICO", use_container_width=True,
-                     type="primary" if st.session_state.current_page == "HISTÓRICO" else "secondary"):
-            st.session_state.current_page = "HISTÓRICO"
-            st.rerun()
-
-        # Botão Cadastro (Restrito a ADMIN)
-        if nivel == "ADMIN":
-            if st.button("👥 CADASTRO", use_container_width=True,
-                         type="primary" if st.session_state.current_page == "CADASTRO" else "secondary"):
-                st.session_state.current_page = "CADASTRO"
+        # Função auxiliar para criar botões de menu
+        def menu_button(label, icon, page_name):
+            if st.button(f"{icon} {label}", use_container_width=True, 
+                         type="primary" if st.session_state.current_page == page_name else "secondary"):
+                st.session_state.current_page = page_name
                 st.rerun()
 
+        menu_button("DASHBOARD", "📊", "DASHBOARD")
+        menu_button("MONITORIA", "📝", "MONITORIA")
+        menu_button("CONTESTAÇÃO", "⚖️", "CONTESTACAO")
+
+        # Histórico e Cadastro visíveis apenas para ADMIN
+        if nivel == "ADMIN":
+            st.markdown("---")
+            st.markdown("**Gestão**")
+            menu_button("HISTÓRICO", "📜", "HISTORICO")
+            menu_button("CADASTRO", "👥", "CADASTRO")
+
         st.divider()
-        
-        # Botão Sair
         if st.button("🚪 Sair", use_container_width=True):
             st.session_state.authenticated = False
-            # Opcional: limpa a página atual ao sair
-            st.session_state.current_page = "DASHBOARD"
             st.rerun()
 
-    # 4. ROTEAMENTO DE PÁGINAS
+    # Roteamento de Páginas
     page = st.session_state.current_page
-
     if page == "DASHBOARD":
         render_dashboard()
     elif page == "MONITORIA":
         render_monitoria()
+    elif page == "CONTESTACAO":
+        render_contestacao()
     elif page == "CADASTRO":
         render_cadastro()
-    elif page == "HISTÓRICO":
-        st.title("📜 Histórico")
-        # Busca os registros do banco modularizado
-        df = get_all_records_db()
-        if not df.empty:
-            st.dataframe(df, use_container_width=True, hide_index=True)
+    elif page == "HISTORICO":
+        # Bloqueio de segurança redundante
+        if nivel == "ADMIN":
+            st.title("📜 Histórico Geral de Monitorias")
+            df = get_all_records_db()
+            st.dataframe(df, use_container_width=True)
         else:
-            st.info("Nenhum registro encontrado.")
+            st.error("Acesso restrito ao Administrador.")
 
 if __name__ == "__main__":
     main()
