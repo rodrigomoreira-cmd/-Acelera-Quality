@@ -1,3 +1,4 @@
+import CHECKLIST_MODEL, calculate_score_details
 THEME = {
     "bg": "#111827", 
     "accent": "#ff7a00", 
