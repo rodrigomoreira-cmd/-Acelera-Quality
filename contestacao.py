@@ -2,63 +2,48 @@ import streamlit as st
 from database import supabase, get_all_records_db
 
 def render_contestacao():
-    nivel = st.session_state.get('nivel', 'sdr').upper()
     st.title("⚖️ Central de Contestações")
+    nivel = st.session_state.get('nivel', 'sdr').upper()
     
     df = get_all_records_db("monitorias")
     if df.empty:
-        st.info("Nenhuma monitoria disponível.")
+        st.info("Nenhuma monitoria encontrada.")
         return
 
-    # Filtros de visualização
-    if nivel == 'SDR':
-        # SDR vê apenas suas monitorias
+    # Filtro lógico
+    if nivel == "SDR":
         df_view = df[df['sdr'] == st.session_state.user]
     else:
-        # ADMIN vê apenas as que possuem contestação ativa para responder
         df_view = df[df['contestada'] == True]
 
-    st.write(f"Exibindo registros para: **{nivel}**")
-
-    for index, row in df_view.iterrows():
+    for _, row in df_view.iterrows():
         status = row.get('status_contestacao', 'Pendente')
-        # Emoji dinâmico baseado no status
-        emoji = "🟠" if status == "Pendente" else "🟢" if status == "Deferido" else "🔴"
-        
-        with st.expander(f"{emoji} Monitoria: {row['data']} | Nota: {row['nota']}%"):
-            st.write(f"**Observações do Monitor:** {row['observacoes']}")
+        with st.expander(f"Monitoria {row['data']} | Nota: {row['nota']}% | Status: {status}"):
             
-            # --- ÁREA DO SDR (PARA CONTESTAR) ---
+            # Lógica para o SDR
             if nivel == "SDR":
-                if row.get('contestada'):
-                    st.warning(f"**Sua contestação:** {row['motivo_contestacao']}")
+                if row['contestada']:
+                    st.warning(f"Sua justificativa: {row['motivo_contestacao']}")
                     if row.get('resposta_gestor'):
-                        st.info(f"**Resposta do Gestor:** {row['resposta_gestor']}")
+                        st.info(f"Resposta do Gestor: {row['resposta_gestor']}")
                 else:
-                    with st.popover("CONTESTAR ESTA NOTA"):
-                        motivo = st.text_area("Explique por que você discorda da nota:", key=f"mot_{row['id']}")
-                        if st.button("Enviar Contestação", key=f"btn_{row['id']}"):
-                            if motivo:
-                                supabase.table("monitorias").update({
-                                    "contestada": True, 
-                                    "motivo_contestacao": motivo,
-                                    "status_contestacao": "Pendente"
-                                }).eq("id", row['id']).execute()
-                                st.success("Contestação enviada!")
-                                st.rerun()
+                    with st.popover("Contestar esta nota"):
+                        motivo = st.text_area("Descreva o motivo", key=f"m_{row['id']}")
+                        if st.button("Enviar", key=f"b_{row['id']}"):
+                            supabase.table("monitorias").update({
+                                "contestada": True, "motivo_contestacao": motivo, "status_contestacao": "Pendente"
+                            }).eq("id", row['id']).execute()
+                            st.rerun()
 
-            # --- ÁREA DO ADMIN (PARA RESPONDER) ---
+            # Lógica para o ADMIN
             else:
-                st.markdown("---")
-                st.write(f"**Argumento do SDR:** {row['motivo_contestacao']}")
-                
-                with st.popover("RESPONDER CONTESTAÇÃO"):
-                    decisao = st.selectbox("Decisão", ["Deferido", "Indeferido"], key=f"dec_{row['id']}")
-                    justificativa = st.text_area("Resposta ao SDR:", key=f"res_{row['id']}")
-                    if st.button("Finalizar Revisão", key=f"fina_{row['id']}"):
+                st.write(f"**SDR:** {row['sdr']}")
+                st.write(f"**Motivo do SDR:** {row['motivo_contestacao']}")
+                with st.popover("Responder"):
+                    decisao = st.selectbox("Decisão", ["Deferido", "Indeferido"], key=f"d_{row['id']}")
+                    resp = st.text_area("Sua resposta", key=f"r_{row['id']}")
+                    if st.button("Confirmar", key=f"f_{row['id']}"):
                         supabase.table("monitorias").update({
-                            "resposta_gestor": justificativa,
-                            "status_contestacao": decisao
+                            "status_contestacao": decisao, "resposta_gestor": resp
                         }).eq("id", row['id']).execute()
-                        st.success("Resposta enviada com sucesso!")
                         st.rerun()

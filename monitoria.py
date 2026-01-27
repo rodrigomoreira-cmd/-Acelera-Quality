@@ -1,67 +1,41 @@
-# monitoria.py
 import streamlit as st
+from database import supabase
 from engine import CHECKLIST_MODEL, calculate_score_details
-from database import supabase, get_sdr_names_db
-from datetime import datetime
 
 def render_monitoria():
-    st.title("📝 Monitoria de Qualidade")
-    
-    nomes_sdr = get_sdr_names_db()
+    st.title("📝 Nova Monitoria de Qualidade")
     
     with st.form("form_monitoria"):
-        # Dados Básicos
         col1, col2 = st.columns(2)
-        sdr = col1.selectbox("SDR", [""] + nomes_sdr)
-        crm_link = col2.text_input("Link Nectar CRM")
-        selene_link = st.text_input("Link Selene")
+        sdr_nome = col1.text_input("Nome do SDR")
+        data_ref = col2.date_input("Data da Monitoria")
         
-        st.divider()
+        # Estado do checklist
+        checklist_state = {}
+        for item in CHECKLIST_MODEL:
+            st.markdown(f"**{item['group']}**: {item['label']}")
+            checklist_state[item['id']] = st.radio(
+                "Avaliação", ["C", "NC", "NC Grave", "NSA"], 
+                key=f"rad_{item['id']}", horizontal=True
+            ).lower()
         
-        # Gerar Checklist dinamicamente por Grupos
-        respostas = {}
-        grupos = sorted(list(set(item['group'] for item in CHECKLIST_MODEL)))
+        obs = st.text_area("Observações Gerais")
         
-        for grupo in grupos:
-            st.subheader(f"📂 {grupo}")
-            itens_grupo = [i for i in CHECKLIST_MODEL if i['group'] == grupo]
-            
-            for item in itens_grupo:
-                respostas[item['id']] = st.radio(
-                    label=item['label'],
-                    options=["conforme", "nc", "nc grave", "nsa"],
-                    index=0,
-                    horizontal=True,
-                    key=item['id']
-                )
-            st.divider()
-
-        observacoes = st.text_area("Observações")
-        plano_acao = st.text_area("Plano de Ação")
-        
-        if st.form_submit_button("Finalizar e Salvar"):
-            if not sdr:
-                st.error("Selecione um SDR.")
-                return
-
-            # Cálculo usando o engine
-            score_details = calculate_score_details(CHECKLIST_MODEL, respostas)
+        if st.form_submit_button("Salvar Monitoria"):
+            results = calculate_score_details(CHECKLIST_MODEL, checklist_state)
             
             payload = {
-                "sdr": sdr,
-                "data": datetime.now().strftime('%Y-%m-%d'),
-                "hora": datetime.now().strftime('%H:%M:%S'),
-                "crm_link": crm_link,
-                "selene_link": selene_link,
-                "nota": score_details['finalNota'],
-                "observacoes": observacoes,
-                "plano_acao": plano_acao,
-                "checklist_json": respostas
+                "sdr": sdr_nome,
+                "data": str(data_ref),
+                "nota": results['finalNota'],
+                "observacoes": obs,
+                "monitor_responsavel": st.session_state.user,
+                "contestada": False, # Valor inicial
+                "status_contestacao": "Nenhum"
             }
             
             try:
                 supabase.table("monitorias").insert(payload).execute()
-                st.success(f"Salvo! Nota Final: {payload['nota']}%")
-                st.balloons()
+                st.success(f"Monitoria salva! Nota final: {results['finalNota']}%")
             except Exception as e:
-                st.error(f"Erro: {e}")
+                st.error(f"Erro ao salvar: {e}")
