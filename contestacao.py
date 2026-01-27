@@ -53,3 +53,29 @@ def render_contestacao():
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Erro ao salvar: {e}")
+
+
+# Dentro de historico.py ou contestacao.py
+
+def render_historico_sdr():
+    st.title("📜 Meu Histórico de Contestações")
+    st.write("Visualize o status das suas solicitações. (Somente Leitura)")
+
+    df = get_all_records_db("monitorias")
+    
+    if not df.empty:
+        # Filtra apenas dados do usuário logado e que foram contestados
+        df_user = df[(df['sdr'] == st.session_state.user) & (df['contestada'] == True)]
+        
+        if df_user.empty:
+            st.info("Você ainda não possui contestações registradas.")
+        else:
+            # Seleciona apenas colunas relevantes para o SDR
+            colunas_exibicao = ["data", "nota", "motivo_contestacao", "observacoes"]
+            st.dataframe(
+                df_user[colunas_exibicao], 
+                use_container_width=True, 
+                hide_index=True
+            )
+    else:
+        st.warning("Nenhum dado encontrado.")
