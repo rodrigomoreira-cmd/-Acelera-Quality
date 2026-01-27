@@ -13,7 +13,7 @@ THEME = {
 
 ASSERTIVITY_CUTOFF = 85
 
-# 2. MODELO DO CHECKLIST (Coloque sua lista aqui)
+# 2. MODELO DO CHECKLIST
 CHECKLIST_MODEL = [
     {"id": "atualizacao_crm", "group": "Nectar CRM", "label": "As etapas do funil estão atualizadas e com histórico descritivo completo e coerente?", "weight": 5},
     {"id": "classificacao_funil", "group": "Nectar CRM", "label": "O SDR seguiu todas as etapas obrigatórias (conexão, pré-qualificação, registo, follow-up)?", "weight": 4},
@@ -57,6 +57,7 @@ def calculate_score_details(checklist_model, checklist_state):
         if val is None or val == 'nsa':
             continue
 
+        # Nota: Ajustado para verificar 'nc grave' conforme sua lógica de botões
         if val == 'nc' or val == 'nc grave':
             nc_count += 1
             nc_items.append(item)
