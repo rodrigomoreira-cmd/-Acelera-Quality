@@ -38,7 +38,10 @@ def main():
 
         # Menu comum para todos os níveis
         menu_button("DASHBOARD", "📊", "DASHBOARD")
-        menu_button("CONTESTAÇÃO", "⚖️", "CONTESTACAO")
+        
+        # Central de contestação (Onde o SDR contesta e o Admin responde)
+        label_cont = "MINHAS CONTESTAÇÕES" if nivel == "SDR" else "GESTÃO DE CONTESTAÇÕES"
+        menu_button(label_cont, "⚖️", "CONTESTACAO")
         
         # Histórico com nomes diferentes dependendo do nível para clareza
         label_hist = "MEU HISTÓRICO" if nivel == "SDR" else "HISTÓRICO GERAL"
@@ -64,6 +67,7 @@ def main():
         render_dashboard()
 
     elif page == "CONTESTACAO":
+        # Esta função (em contestacao.py) agora contém a lógica de resposta do ADM
         render_contestacao()
 
     elif page == "HISTORICO":
@@ -71,31 +75,34 @@ def main():
         df = get_all_records_db()
         
         if not df.empty:
-            # Filtro de visualização: SDR só vê os seus dados e não edita
             if nivel == "SDR":
+                # Filtro SDR: Vê apenas os seus registros
                 df = df[df['sdr'] == st.session_state.user]
                 st.info("Visualização de histórico pessoal (Somente Leitura)")
-                # Exibe o dataframe sem permitir edição (SDR)
-                st.dataframe(df, use_container_width=True, hide_index=True)
+                
+                # Colunas sugeridas para o SDR acompanhar no histórico
+                cols = ["data", "nota", "contestada", "status_contestacao", "resposta_gestor"]
+                # Exibe apenas as colunas que existem no DF para evitar erro
+                df_display = df[[c for c in cols if c in df.columns]]
+                st.dataframe(df_display, use_container_width=True, hide_index=True)
             else:
-                # Exibe o dataframe completo para o ADMIN
+                # ADMIN vê tudo
                 st.dataframe(df, use_container_width=True, hide_index=True)
         else:
             st.info("Nenhum registro encontrado.")
 
-    # Páginas restritas apenas ao ADMIN
     elif page == "MONITORIA":
         if nivel == "ADMIN":
             render_monitoria()
         else:
-            st.error("Acesso Negado: Esta página é restrita a administradores.")
+            st.error("Acesso Negado.")
             st.session_state.current_page = "DASHBOARD"
 
     elif page == "CADASTRO":
         if nivel == "ADMIN":
             render_cadastro()
         else:
-            st.error("Acesso Negado: Esta página é restrita a administradores.")
+            st.error("Acesso Negado.")
             st.session_state.current_page = "DASHBOARD"
 
 if __name__ == "__main__":
