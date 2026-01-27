@@ -1,1 +1,0 @@
-# -Acelera-Quality
