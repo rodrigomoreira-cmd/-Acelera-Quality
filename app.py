@@ -5,7 +5,7 @@ from monitoria import render_monitoria
 from cadastro import render_cadastro
 from contestacao import render_contestacao
 from database import get_all_records_db
-from style import apply_custom_styles  # Importação do novo arquivo de estilo
+from style import apply_custom_styles  
 
 def main():
     # 1. Configuração Inicial da Página
@@ -23,7 +23,6 @@ def main():
         st.stop()
 
     # 4. Aplicação do Estilo Visual Personalizado (Gradientes)
-    # Chamamos aqui para que afete toda a área logada do app
     apply_custom_styles()
 
     # Identificação do Nível de Acesso
@@ -31,31 +30,33 @@ def main():
 
     # 5. Sidebar com Navegação Estilizada
     with st.sidebar:
-        st.markdown(f"### 👤 {st.session_state.user}")
+        # Verificação de segurança para o nome do usuário
+        nome_usuario = st.session_state.get('user', 'Usuário')
+        st.markdown(f"### 👤 {nome_usuario}")
         st.write(f"Nível: {nivel}")
         st.divider()
 
+        # Definição da função com 3 parâmetros
         def menu_button(label, icon, page_name):
-            # O estilo do botão (Laranja) vem do apply_custom_styles()
             if st.button(f"{icon} {label}", use_container_width=True, 
                          type="primary" if st.session_state.current_page == page_name else "secondary"):
                 st.session_state.current_page = page_name
                 st.rerun()
 
-        # MENU PARA SDR
-        menu_button("DASHBOARD", "DASHBOARD")
-        menu_button("CONTESTAR NOTA", "CONTESTACAO")
-        menu_button("HISTÓRICO", "HISTORICO")
+        # MENU PARA SDR - Agora com os 3 argumentos corretos
+        menu_button("DASHBOARD", "📊", "DASHBOARD")
+        menu_button("CONTESTAR NOTA", "⚖️", "CONTESTACAO")
+        menu_button("HISTÓRICO", "📜", "HISTORICO")
 
         # MENU ADICIONAL PARA ADMIN
         if nivel == "ADMIN":
             st.markdown("---")
             st.markdown("**Gestão**")
-            menu_button("NOVA MONITORIA", "MONITORIA")
-            menu_button("CADASTRO SDR", "CADASTRO")
+            menu_button("NOVA MONITORIA", "📝", "MONITORIA")
+            menu_button("CADASTRO SDR", "👥", "CADASTRO")
 
         st.divider()
-        if st.button("Sair", use_container_width=True):
+        if st.button("🚪 Sair", use_container_width=True):
             st.session_state.authenticated = False
             st.rerun()
 
@@ -69,15 +70,15 @@ def main():
         render_contestacao() 
     
     elif page == "HISTORICO":
-        st.title("Histórico de Monitorias")
-        df = get_all_records_db()
-        if not df.empty:
+        st.title("📜 Histórico de Monitorias")
+        # Importante: Verifique se get_all_records_db aceita o nome da tabela como argumento
+        df = get_all_records_db("monitorias") 
+        
+        if df is not None and not df.empty:
             if nivel == "SDR":
-                # SDR só vê as dele (Leitura)
                 df = df[df['sdr'] == st.session_state.user]
                 st.info("Seu histórico de performance")
             
-            # Exibe o dataframe estilizado (as cores de fundo do style.py afetam a visualização)
             st.dataframe(df, use_container_width=True, hide_index=True)
         else:
             st.info("Nenhum registro encontrado.")
