@@ -1,5 +1,25 @@
 import streamlit as st
+import re
 from database import supabase
+
+def validar_prefixo(prefixo):
+    """
+    Permite apenas letras, números, pontos e sublinhados.
+    Retorna True se for válido e False se houver espaços ou símbolos.
+    """
+    padrao = r'^[a-zA-Z0-9._]+$'
+    return re.match(padrao, prefixo) is not None
+
+def formatar_telefone(tel):
+    """
+    Remove caracteres não numéricos e aplica a máscara (XX) XXXXX-XXXX.
+    """
+    numeros = re.sub(r'\D', '', tel)
+    if len(numeros) == 11:
+        return f"({numeros[:2]}) {numeros[2:7]}-{numeros[7:]}"
+    elif len(numeros) == 10:
+        return f"({numeros[:2]}) {numeros[2:6]}-{numeros[6:]}"
+    return tel
 
 def render_usuario_gestao():
     st.title("👤 Gerenciamento de Perfil")
@@ -15,8 +35,12 @@ def render_usuario_gestao():
         return
 
     dados_user = res.data[0]
+    
+    # Tratamento do E-mail para exibição do prefixo
+    email_atual = dados_user.get('email', '')
+    prefixo_atual = email_atual.split('@')[0] if '@' in email_atual else email_atual
 
-    # --- VISÃO DO SDR (OU DADOS PRÓPRIOS DO ADMIN) ---
+    # --- VISÃO DO MEU PERFIL (SDR e ADMIN) ---
     st.subheader("Meus Dados")
     col1, col2 = st.columns(2)
 
@@ -25,12 +49,25 @@ def render_usuario_gestao():
         st.text_input("Usuário de Acesso", value=dados_user['user'], disabled=True)
         
     with col2:
-        # Admin pode editar seu próprio email, SDR apenas visualiza
-        email_disabled = False if nivel == "ADMIN" else True
-        novo_email = st.text_input("Email", value=dados_user.get('email', ''), disabled=email_disabled)
+        st.write("E-mail Institucional")
+        c_prefixo, c_dominio = st.columns([2, 1])
         
-        # Campo de telefone (exemplo conforme sua solicitação)
-        novo_tel = st.text_input("Telefone", value=dados_user.get('telefone', ''), disabled=email_disabled)
+        # SDR não edita e-mail ou telefone aqui (apenas Admin ou via painel de gestão)
+        # Se quiser que o próprio usuário edite, mude disabled para False
+        p_disabled = False if nivel == "ADMIN" else True
+        
+        with c_prefixo:
+            novo_prefixo_meu = st.text_input(
+                "Prefixo", 
+                value=prefixo_atual, 
+                disabled=p_disabled, 
+                label_visibility="collapsed",
+                key="meu_prefixo_input"
+            )
+        with c_dominio:
+            st.info("@grupoacelerador.com.br")
+            
+        meu_tel_raw = st.text_input("Telefone", value=dados_user.get('telefone', ''), disabled=p_disabled)
 
     # BOTÃO ALTERAR SENHA (Disponível para todos)
     with st.expander("🔐 Alterar Minha Senha"):
@@ -42,43 +79,52 @@ def render_usuario_gestao():
                 supabase.table("usuarios").update({"senha": nova_senha}).eq("id", dados_user['id']).execute()
                 st.success("Senha alterada com sucesso!")
             else:
-                st.error("As senhas não coincidem ou estão vazias.")
+                st.error("As senhas não coincidem ou campo vazio.")
 
     st.divider()
 
-    # --- VISÃO EXCLUSIVA DO ADMIN (GESTÃO TOTAL) ---
+    # --- VISÃO EXCLUSIVA DO ADMIN (GESTÃO DE OUTROS USUÁRIOS) ---
     if nivel == "ADMIN":
         st.subheader("🛠️ Painel de Controle de Usuários (ADMIN)")
         
-        # Busca todos os usuários para o Admin gerenciar
         todos_users = supabase.table("usuarios").select("*").execute()
         df_users = todos_users.data
 
         if df_users:
-            st.write("Selecione um colaborador para editar:")
-            nomes_sdrs = [u['nome'] for u in df_users]
-            sdr_para_editar = st.selectbox("Colaborador", nomes_sdrs)
+            nomes_colaboradores = [u['nome'] for u in df_users]
+            sdr_para_editar = st.selectbox("Selecione o Colaborador", nomes_colaboradores)
 
-            # Filtra dados do selecionado
             target = next(item for item in df_users if item["nome"] == sdr_para_editar)
+            prefixo_target = target.get('email', '').split('@')[0]
 
-            with st.container():
-                edit_email = st.text_input("Editar Email do Colaborador", value=target.get('email', ''))
-                edit_tel = st.text_input("Editar Telefone do Colaborador", value=target.get('telefone', ''))
-                edit_senha = st.text_input("Resetar Senha do Colaborador", placeholder="Digite nova senha se desejar alterar")
+            col_edit1, col_edit2 = st.columns([2, 1])
+            with col_edit1:
+                edit_prefixo = st.text_input("Editar Prefixo do E-mail", value=prefixo_target)
+            with col_edit2:
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.info("@grupoacelerador.com.br")
 
-                if st.button(f"Salvar Alterações em {sdr_para_editar}"):
+            edit_tel_raw = st.text_input("Editar Telefone", value=target.get('telefone', ''))
+            edit_senha = st.text_input("Resetar Senha", placeholder="Nova senha (opcional)", type="password")
+
+            if st.button(f"Salvar Alterações em {sdr_para_editar}"):
+                # Validação do Prefixo
+                if not validar_prefixo(edit_prefixo):
+                    st.error("❌ Prefixo inválido! Não use espaços ou símbolos especiais.")
+                else:
+                    email_final = f"{edit_prefixo.strip().lower()}@grupoacelerador.com.br"
+                    tel_formatado = formatar_telefone(edit_tel_raw)
+                    
                     updates = {
-                        "email": edit_email,
-                        "telefone": edit_tel
+                        "email": email_final,
+                        "telefone": tel_formatado
                     }
                     if edit_senha:
                         updates["senha"] = edit_senha
                     
-                    supabase.table("usuarios").update(updates).eq("id", target['id']).execute()
-                    st.success(f"Dados de {sdr_para_editar} atualizados com sucesso!")
-                    st.rerun()
-
-        st.divider()
-        st.subheader("📜 Histórico Geral de Cadastros")
-        st.dataframe(df_users, use_container_width=True)
+                    try:
+                        supabase.table("usuarios").update(updates).eq("id", target['id']).execute()
+                        st.success(f"Dados de {sdr_para_editar} atualizados!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Erro ao atualizar: {e}")
