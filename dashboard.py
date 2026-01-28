@@ -5,113 +5,94 @@ from database import get_all_records_db
 from engine import THEME, ASSERTIVITY_CUTOFF 
 
 def render_dashboard():
-    # Ajusta o título com base no nível para personalização
     nivel = st.session_state.get('nivel', 'sdr').upper()
     
-    if nivel == 'ADMIN':
-        st.title("📊 Dashboard de Performance - Visão Gestor")
-    else:
-        st.title(f"📊 Minha Performance - {st.session_state.user}")
+    # CSS para forçar o contraste de cores nos títulos e métricas
+    st.markdown(f"""
+        <style>
+        h1, h2, h3 {{ color: {THEME['text']} !important; }}
+        [data-testid="stMetricValue"] {{ color: {THEME['accent']} !important; }}
+        </style>
+    """, unsafe_allow_html=True)
 
-    # 1. CARREGAMENTO DOS DADOS
-    with st.spinner("Carregando indicadores do banco de dados..."):
-        df = get_all_records_db("monitorias")
+    st.title(f"📊 Dashboard Performance - {'Gestão' if nivel == 'ADMIN' else st.session_state.user}")
 
+    # 1. CARREGAMENTO E FILTRO
+    df = get_all_records_db("monitorias")
     if df.empty:
-        st.warning("Ainda não existem dados de monitoria registrados no Supabase.")
+        st.warning("Nenhum dado encontrado.")
         return
 
-    # --- TRATAMENTO DE DADOS ---
     df['data'] = pd.to_datetime(df['data'])
     df['MesAno'] = df['data'].dt.to_period('M').astype(str)
 
-    # 2. FILTRO DE PRIVACIDADE (Refinado)
     if nivel == 'SDR':
-        # SDR só enxerga os próprios dados
         df = df[df['sdr'] == st.session_state.user]
-        if df.empty:
-            st.info("Você ainda não possui monitorias registradas para gerar indicadores.")
-            return
-    else:
-        st.info("💡 Visão de Administrador: Dados consolidados de toda a equipe.")
-
-    # 3. CÁLCULO DE MÉTRICAS (KPIs)
+    
+    # 2. MÉTRICAS LATERAIS (KPIs)
     avg_score = df['nota'].mean()
-    total_calls = len(df)
-    critical_nc = len(df[df['nota'] == 0])
-
-    # Exibição dos Cards
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.metric(
-            label="Média de Assertividade",
-            value=f"{avg_score:.1f}%",
-            delta=f"{avg_score - ASSERTIVITY_CUTOFF:.1f}%",
-            delta_color="normal" if avg_score >= ASSERTIVITY_CUTOFF else "inverse"
-        )
-    
+        st.metric("Média de Assertividade", f"{avg_score:.1f}%")
     with col2:
-        st.metric("Total de Monitorias", total_calls)
-        
+        st.metric("Total Monitorias", len(df))
     with col3:
-        # Mostra o total de Notas Zero (NC Grave)
-        st.metric("Notas Zero (NC Grave)", critical_nc, delta="Atenção" if critical_nc > 0 else None, delta_color="inverse")
+        status_pendente = len(df[df['status_contestacao'] == 'Pendente'])
+        st.metric("Contestações Pendentes", status_pendente)
 
     st.divider()
 
-    # 4. GRÁFICOS VISUAIS
+    # 3. GRÁFICOS COM PALETA PRETO/LARANJA
     col_left, col_right = st.columns(2)
 
     with col_left:
-        st.subheader("📈 Evolução de Nota")
-        # Agrupamento para gráfico de linha
+        st.subheader("📈 Evolução Mensal")
         trend = df.groupby('MesAno')['nota'].mean().reset_index()
         fig_trend = px.line(
-            trend, 
-            x='MesAno', 
-            y='nota', 
-            markers=True,
-            labels={'nota': 'Média Nota', 'MesAno': 'Período'},
-            color_discrete_sequence=[THEME['accent']]
+            trend, x='MesAno', y='nota', markers=True,
+            color_discrete_sequence=[THEME['accent']] # Linha Laranja
         )
-        fig_trend.update_layout(yaxis_range=[0, 105], template="plotly_dark")
+        # Ajuste de Layout: Fundo Preto, Eixos Brancos
+        fig_trend.update_layout(
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font_color=THEME['text'],
+            xaxis=dict(showgrid=False),
+            yaxis=dict(gridcolor='#333333', range=[0, 105])
+        )
         st.plotly_chart(fig_trend, use_container_width=True)
 
     with col_right:
-        st.subheader("🎯 Distribuição de Resultados")
+        st.subheader("🎯 Distribuição de Notas")
         fig_dist = px.histogram(
-            df, 
-            x="nota", 
-            nbins=10,
-            labels={'nota': 'Faixa de Nota', 'count': 'Frequência'},
-            color_discrete_sequence=[THEME['warning']]
+            df, x="nota", nbins=10,
+            color_discrete_sequence=[THEME['text']] # Barras Brancas para contraste
         )
-        fig_dist.update_layout(template="plotly_dark", bargap=0.1)
+        fig_dist.update_layout(
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font_color=THEME['text'],
+            bargap=0.1
+        )
         st.plotly_chart(fig_dist, use_container_width=True)
 
-    # 5. RANKING E GESTÃO (Visível apenas para ADMIN)
+    # 4. RANKING PARA ADMIN
     if nivel == 'ADMIN':
         st.divider()
-        st.subheader("🏆 Ranking de Assertividade por SDR")
-        
-        # Ranking consolidado
+        st.subheader("🏆 Ranking de SDRs")
         ranking = df.groupby('sdr')['nota'].mean().sort_values(ascending=False).reset_index()
         
         fig_rank = px.bar(
-            ranking, 
-            x='sdr', 
-            y='nota', 
-            text_auto='.1f',
+            ranking, x='sdr', y='nota',
             color='nota',
-            labels={'sdr': 'SDR', 'nota': 'Média de Nota'},
-            color_continuous_scale=[THEME['error'], THEME['warning'], THEME['success']]
+            # Gradiente: Cinza (baixo) para Laranja (alto)
+            color_continuous_scale=[[0, '#333333'], [1, THEME['accent']]]
         )
-        fig_rank.update_layout(template="plotly_dark", coloraxis_showscale=False)
+        fig_rank.update_layout(
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font_color=THEME['text'],
+            coloraxis_showscale=False
+        )
         st.plotly_chart(fig_rank, use_container_width=True)
-        
-        # Indicador de Contestações Pendentes (Extra para o Admin)
-        if 'status_contestacao' in df.columns:
-            pendentes = len(df[df['status_contestacao'] == 'Pendente'])
-            if pendentes > 0:
-                st.warning(f"🔔 Existem {pendentes} contestações aguardando sua resposta na aba de Contestações.")
