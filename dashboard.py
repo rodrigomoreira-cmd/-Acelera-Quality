@@ -8,7 +8,7 @@ def render_dashboard():
     nivel = st.session_state.get('nivel', 'sdr').upper()
     
     # Título dinâmico
-    st.title(f"📊 Dashboard Performance - {'Gestão' if nivel == 'ADMIN' else st.session_state.user}")
+    st.title(f"Dashboard Performance - {'Gestão' if nivel == 'ADMIN' else st.session_state.user}")
 
     # 1. CARREGAMENTO E TRATAMENTO
     df = get_all_records_db("monitorias")
@@ -42,7 +42,7 @@ def render_dashboard():
     col_left, col_right = st.columns(2)
 
     with col_left:
-        st.subheader("📈 Evolução Mensal")
+        st.subheader("Evolução Mensal")
         trend = df.groupby('MesAno')['nota'].mean().reset_index()
         
         # Gráfico de linha usando a cor de destaque (Laranja)
@@ -61,7 +61,7 @@ def render_dashboard():
         st.plotly_chart(fig_trend, use_container_width=True)
 
     with col_right:
-        st.subheader("🏆 Performance por Período")
+        st.subheader("Performance por Período")
         # Barras que mudam de cor conforme a nota
         fig_bars = go.Figure()
         
@@ -85,7 +85,7 @@ def render_dashboard():
     # 4. RANKING PARA ADMIN (COM GRADIENTE)
     if nivel == 'ADMIN':
         st.divider()
-        st.subheader("🥇 Ranking Geral de SDRs")
+        st.subheader("Ranking Geral de SDRs")
         ranking = df.groupby('sdr')['nota'].mean().sort_values(ascending=False).reset_index()
         
         fig_rank = go.Figure()

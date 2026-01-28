@@ -2,7 +2,7 @@ import streamlit as st
 from database import supabase, get_all_records_db
 
 def render_contestacao():
-    st.title("⚖️ Central de Contestações")
+    st.title("Central de Contestações")
     nivel = st.session_state.get('nivel', 'sdr')
     df = get_all_records_db("monitorias")
 

@@ -43,19 +43,19 @@ def main():
                 st.rerun()
 
         # MENU PARA SDR
-        menu_button("DASHBOARD", "📊", "DASHBOARD")
-        menu_button("CONTESTAR NOTA", "⚖️", "CONTESTACAO")
-        menu_button("HISTÓRICO", "📜", "HISTORICO")
+        menu_button("DASHBOARD", "DASHBOARD")
+        menu_button("CONTESTAR NOTA", "CONTESTACAO")
+        menu_button("HISTÓRICO", "HISTORICO")
 
         # MENU ADICIONAL PARA ADMIN
         if nivel == "ADMIN":
             st.markdown("---")
             st.markdown("**Gestão**")
-            menu_button("NOVA MONITORIA", "📝", "MONITORIA")
-            menu_button("CADASTRO SDR", "👥", "CADASTRO")
+            menu_button("NOVA MONITORIA", "MONITORIA")
+            menu_button("CADASTRO SDR", "CADASTRO")
 
         st.divider()
-        if st.button("🚪 Sair", use_container_width=True):
+        if st.button("Sair", use_container_width=True):
             st.session_state.authenticated = False
             st.rerun()
 
@@ -69,7 +69,7 @@ def main():
         render_contestacao() 
     
     elif page == "HISTORICO":
-        st.title("📜 Histórico de Monitorias")
+        st.title("Histórico de Monitorias")
         df = get_all_records_db()
         if not df.empty:
             if nivel == "SDR":
