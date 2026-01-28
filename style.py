@@ -3,24 +3,24 @@ import streamlit as st
 def apply_custom_styles():
     """
     Aplica a identidade visual: 
-    Fundo: Gradiente entre dois tons de preto (#000000 e #0e1117)
-    Botões: Gradiente Laranja (#f77a00 para #c36000)
+    Fundo: Preto sólido #181818 (com leve gradiente para profundidade)
+    Botões: Gradiente Laranja de cima para baixo
     """
     st.markdown(f"""
         <style>
-        /* 1. Fundo da Aplicação (Dois tons de preto de cima para baixo) */
+        /* 1. Fundo da Aplicação (Cor #181818 conforme solicitado) */
         .stApp {{
-            background: linear-gradient(180deg, #000000 0%, #0e1117 100%) !important;
+            background: linear-gradient(180deg, #181818 0%, #101010 100%) !important;
             background-attachment: fixed;
         }}
 
-        /* 2. Barra Lateral (Sidebar) em preto sólido para contraste */
+        /* 2. Barra Lateral (Sidebar) em harmonia com o fundo */
         [data-testid="stSidebar"] {{
-            background-color: #000000 !important;
+            background-color: #121212 !important;
             border-right: 1px solid #f77a00;
         }}
 
-        /* 3. Estilização dos Botões (Gradiente Laranja Profissional) */
+        /* 3. Estilização dos Botões (Gradiente Laranja #f77a00 para #c36000) */
         div.stButton > button {{
             background: linear-gradient(180deg, #f77a00 0%, #c36000 100%) !important;
             color: white !important;
@@ -37,7 +37,7 @@ def apply_custom_styles():
             box-shadow: 0px 5px 15px rgba(247, 122, 0, 0.4);
         }}
 
-        /* 4. Cores de Texto e Métricas (Branco e Laranja) */
+        /* 4. Cores de Texto e Métricas */
         h1, h2, h3, p, span, label, [data-testid="stMetricLabel"] {{
             color: #FFFFFF !important;
         }}
@@ -46,16 +46,16 @@ def apply_custom_styles():
             color: #f77a00 !important;
         }}
 
-        /* 5. Inputs, Seletores e Tabelas */
+        /* 5. Inputs e Campos de Seleção com fundo levemente mais claro para contraste */
         .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] {{
-            background-color: #1a1a1a !important;
+            background-color: #242424 !important;
             color: white !important;
             border: 1px solid #333333 !important;
         }}
 
-        /* Estilo para Dataframes (Tabelas) ficarem escuras */
+        /* Tabelas (Dataframes) */
         [data-testid="stDataFrame"] {{
-            background-color: #000000 !important;
+            background-color: #181818 !important;
         }}
         </style>
     """, unsafe_allow_html=True)
