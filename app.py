@@ -29,12 +29,12 @@ def main():
         st.divider()
 
         def menu_button(label, icon, page_name):
-            if st.button(f"{icon} {label}", use_container_width=True, 
+            # Adicionamos a key=page_name para evitar o erro de DuplicateElementId
+            if st.button(f"{icon} {label}", use_container_width=True, key=f"btn_{page_name}",
                          type="primary" if st.session_state.current_page == page_name else "secondary"):
                 st.session_state.current_page = page_name
                 st.rerun()
 
-        # Chamadas com 3 argumentos para evitar erro
         menu_button("DASHBOARD", "📊", "DASHBOARD")
         menu_button("MEU PERFIL", "👤", "PERFIL")
         menu_button("CONTESTAR NOTA", "⚖️", "CONTESTACAO")
@@ -43,13 +43,11 @@ def main():
         if nivel == "ADMIN":
             st.markdown("---")
             st.markdown("**Gestão**")
-            # Procure a linha 46 e garanta que ela tenha o ícone entre aspas:
-            menu_button("DASHBOARD", "📊", "DASHBOARD")
             menu_button("NOVA MONITORIA", "📝", "MONITORIA")
             menu_button("CADASTRO SDR", "👥", "CADASTRO")
 
         st.divider()
-        if st.button("🚪 Sair", use_container_width=True):
+        if st.button("🚪 Sair", use_container_width=True, key="btn_logout"):
             st.session_state.authenticated = False
             st.rerun()
 
