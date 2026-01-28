@@ -44,7 +44,7 @@ def main():
 
         # --- MENU PARA TODOS (SDR e ADMIN) ---
         menu_button("DASHBOARD", "📊", "DASHBOARD")
-        menu_button("MEU PERFIL", "👤", "PERFIL")  # Acesso à troca de senha
+        menu_button("PERFIL", "👤", "PERFIL")  # Acesso à troca de senha
         menu_button("CONTESTAR NOTA", "⚖️", "CONTESTACAO")
         menu_button("HISTÓRICO", "📜", "HISTORICO")
 
