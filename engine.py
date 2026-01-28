@@ -8,7 +8,7 @@ THEME = {
     "text": "#FFFFFF",     # Branco (Textos)
     "error": "#FF4B4B",    # Vermelho (Mantido para alertas críticos)
     "warning": "#FF7A00",  # Laranja (Para alertas médios)
-    "success": "#8DA573"   # vERDE (Para confirmações positivas)
+    "success": "#8DA573"   # VERDE (Para confirmações positivas)
 }
 
 ASSERTIVITY_CUTOFF = 85
