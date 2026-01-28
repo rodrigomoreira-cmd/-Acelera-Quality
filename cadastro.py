@@ -3,17 +3,12 @@ import re
 from database import supabase
 
 def validar_prefixo(prefixo):
-    """
-    Permite apenas letras, números, pontos e sublinhados.
-    Retorna True se for válido e False se houver espaços ou símbolos.
-    """
+    """Permite apenas letras, números, pontos e sublinhados."""
     padrao = r'^[a-zA-Z0-9._]+$'
     return re.match(padrao, prefixo) is not None
 
 def formatar_telefone(tel):
-    """
-    Remove caracteres não numéricos e aplica a máscara (XX) XXXXX-XXXX.
-    """
+    """Aplica a máscara (XX) XXXXX-XXXX."""
     numeros = re.sub(r'\D', '', tel)
     if len(numeros) == 11:
         return f"({numeros[:2]}) {numeros[2:7]}-{numeros[7:]}"
@@ -22,66 +17,62 @@ def formatar_telefone(tel):
     return tel
 
 def render_cadastro():
-    st.title("👥 Cadastro de Novos Colaboradores")
-    st.markdown("Preencha os dados abaixo para liberar o acesso ao sistema.")
+    st.title("👥 Cadastro de Novo Colaborador (SDR)")
+    st.markdown("Preencha as informações abaixo para criar um novo acesso ao sistema.")
 
-    with st.form("form_cadastro", clear_on_submit=True):
-        col1, col2 = st.columns(2)
+    # Usando um container para manter o layout limpo
+    with st.container():
+        # 1. Informações Básicas
+        nome = st.text_input("Nome Completo", placeholder="Ex: João Silva")
+        usuario = st.text_input("Usuário de Acesso", placeholder="Ex: joao.sdr")
         
-        with col1:
-            nome = st.text_input("Nome Completo")
-            usuario = st.text_input("Usuário de Login (ex: nome.sobrenome)")
-            senha_inicial = st.text_input("Senha Inicial", type="password")
+        # 2. E-mail Institucional (Layout Verticalizado com Prefixo e Domínio)
+        st.write("**E-mail Institucional**")
+        col_pref, col_dom = st.columns([2, 1])
+        with col_pref:
+            prefixo_email = st.text_input("Prefixo do E-mail", placeholder="Ex: joao.silva", label_visibility="collapsed")
+        with col_dom:
+            st.info("@grupoacelerador.com.br")
         
-        with col2:
-            st.write("E-mail Institucional")
-            c_mail_prefixo, c_mail_dominio = st.columns([2, 1])
-            
-            with c_mail_prefixo:
-                email_prefixo = st.text_input("Prefixo do e-mail", placeholder="rodrigo.moreira", label_visibility="collapsed")
-            
-            with c_mail_dominio:
-                st.info("@grupoacelerador.com.br")
-            
-            telefone_raw = st.text_input("Telefone (com DDD)", placeholder="11999999999")
-            nivel = st.selectbox("Nível de Acesso", ["SDR", "ADMIN"])
+        # 3. Contato e Permissão
+        telefone_raw = st.text_input("Telefone de Contato", placeholder="DDD + Número")
+        nivel_acesso = st.selectbox("Nível de Acesso", ["SDR", "ADMIN"])
+        
+        # 4. Segurança
+        senha = st.text_input("Senha Inicial", type="password", placeholder="Digite a senha temporária")
 
-        if st.form_submit_button("Finalizar Cadastro"):
-            # Validações de segurança
-            if not nome or not usuario or not email_prefixo or not senha_inicial:
-                st.error("❌ Por favor, preencha todos os campos obrigatórios.")
-            
-            elif not validar_prefixo(email_prefixo):
-                st.error("❌ O prefixo do e-mail é inválido! Não use espaços, acentos ou símbolos (apenas letras, números, '.' e '_').")
-            
-            else:
-                # Processamento dos dados
-                email_completo = f"{email_prefixo.strip().lower()}@grupoacelerador.com.br"
-                telefone_formatado = formatar_telefone(telefone_raw)
-                
-                payload = {
-                    "nome": nome,
-                    "user": usuario.lower().strip(),
-                    "senha": senha_inicial,
-                    "email": email_completo,
-                    "telefone": telefone_formatado,
-                    "nivel": nivel.lower(),
-                    "esta_ativo": True
-                }
-
-                try:
-                    supabase.table("usuarios").insert(payload).execute()
-                    st.success(f"✅ Usuário {nome} cadastrado com sucesso!")
-                    st.info(f"📧 E-mail: {email_completo} | 📱 Tel: {telefone_formatado}")
-                except Exception as e:
-                    st.error(f"Erro ao cadastrar no banco: {e}")
-
-    # Exibição da Lista de Usuários Existentes
     st.divider()
-    st.subheader("📋 Colaboradores Cadastrados")
-    try:
-        res = supabase.table("usuarios").select("nome, user, email, telefone, nivel").execute()
-        if res.data:
-            st.table(res.data)
-    except:
-        st.info("Não foi possível carregar a lista de usuários.")
+
+    if st.button("🚀 Finalizar Cadastro", use_container_width=True):
+        # Validações antes de salvar
+        if not nome or not usuario or not prefixo_email or not senha:
+            st.error("⚠️ Por favor, preencha todos os campos obrigatórios.")
+        elif not validar_prefixo(prefixo_email):
+            st.error("❌ O prefixo do e-mail não pode conter espaços ou caracteres especiais (use apenas letras, números, '.' ou '_').")
+        else:
+            # Preparar dados para o Supabase
+            email_completo = f"{prefixo_email.strip().lower()}@grupoacelerador.com.br"
+            telefone_formatado = formatar_telefone(telefone_raw)
+            
+            novo_usuario = {
+                "nome": nome.strip(),
+                "user": usuario.strip().lower(),
+                "email": email_completo,
+                "telefone": telefone_formatado,
+                "nivel": nivel_acesso,
+                "senha": senha
+            }
+
+            try:
+                # Tenta inserir no banco de dados
+                res = supabase.table("usuarios").insert(novo_usuario).execute()
+                
+                if res.data:
+                    st.success(f"✅ Colaborador **{nome}** cadastrado com sucesso!")
+                    st.balloons()
+                    # Limpar campos após sucesso (opcional, via rerun)
+                    # st.rerun()
+                else:
+                    st.error("❌ Erro ao salvar no banco de dados. Verifique se o usuário já existe.")
+            except Exception as e:
+                st.error(f"❌ Erro de conexão: {str(e)}")
