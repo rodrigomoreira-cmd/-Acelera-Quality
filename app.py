@@ -4,6 +4,7 @@ from dashboard import render_dashboard
 from monitoria import render_monitoria
 from cadastro import render_cadastro
 from contestacao import render_contestacao
+from usuarios_gestao import render_usuario_gestao  # Nova importação
 from database import get_all_records_db
 from style import apply_custom_styles  
 
@@ -30,28 +31,27 @@ def main():
 
     # 5. Sidebar com Navegação Estilizada
     with st.sidebar:
-        # Verificação de segurança para o nome do usuário
         nome_usuario = st.session_state.get('user', 'Usuário')
         st.markdown(f"### 👤 {nome_usuario}")
         st.write(f"Nível: {nivel}")
         st.divider()
 
-        # Definição da função com 3 parâmetros
         def menu_button(label, icon, page_name):
             if st.button(f"{icon} {label}", use_container_width=True, 
                          type="primary" if st.session_state.current_page == page_name else "secondary"):
                 st.session_state.current_page = page_name
                 st.rerun()
 
-        # MENU PARA SDR - Agora com os 3 argumentos corretos
+        # --- MENU PARA TODOS (SDR e ADMIN) ---
         menu_button("DASHBOARD", "📊", "DASHBOARD")
+        menu_button("MEU PERFIL", "👤", "PERFIL")  # Acesso à troca de senha
         menu_button("CONTESTAR NOTA", "⚖️", "CONTESTACAO")
         menu_button("HISTÓRICO", "📜", "HISTORICO")
 
-        # MENU ADICIONAL PARA ADMIN
+        # --- MENU ADICIONAL PARA ADMIN ---
         if nivel == "ADMIN":
             st.markdown("---")
-            st.markdown("**Gestão**")
+            st.markdown("**Gestão de Equipe**")
             menu_button("NOVA MONITORIA", "📝", "MONITORIA")
             menu_button("CADASTRO SDR", "👥", "CADASTRO")
 
@@ -60,25 +60,26 @@ def main():
             st.session_state.authenticated = False
             st.rerun()
 
-    # 6. Roteamento de Páginas
+    # 6. Roteamento de Páginas (Lógica de Exibição)
     page = st.session_state.current_page
 
     if page == "DASHBOARD":
         render_dashboard()
+    
+    elif page == "PERFIL":
+        render_usuario_gestao() # Tela de alteração de senha e dados
     
     elif page == "CONTESTACAO":
         render_contestacao() 
     
     elif page == "HISTORICO":
         st.title("📜 Histórico de Monitorias")
-        # Importante: Verifique se get_all_records_db aceita o nome da tabela como argumento
         df = get_all_records_db("monitorias") 
         
         if df is not None and not df.empty:
             if nivel == "SDR":
                 df = df[df['sdr'] == st.session_state.user]
                 st.info("Seu histórico de performance")
-            
             st.dataframe(df, use_container_width=True, hide_index=True)
         else:
             st.info("Nenhum registro encontrado.")
