@@ -43,6 +43,8 @@ def main():
         if nivel == "ADMIN":
             st.markdown("---")
             st.markdown("**Gestão**")
+            # Procure a linha 46 e garanta que ela tenha o ícone entre aspas:
+            menu_button("DASHBOARD", "📊", "DASHBOARD")
             menu_button("NOVA MONITORIA", "📝", "MONITORIA")
             menu_button("CADASTRO SDR", "👥", "CADASTRO")
 
