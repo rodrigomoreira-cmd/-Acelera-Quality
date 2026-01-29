@@ -2,9 +2,9 @@ import streamlit as st
 import pandas as pd
 from auth import render_login
 from dashboard import render_dashboard
-from monitoria import render_nova_monitoria 
+from monitoria import render_nova_monitoria
+from contestacao import render_contestacao
 from cadastro import render_cadastro
-from contestacao import render_contestacao 
 from meus_resultados import render_meus_resultados 
 from usuarios_gestao import render_usuario_gestao 
 from auditoria import render_auditoria 
