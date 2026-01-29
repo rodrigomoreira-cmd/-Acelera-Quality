@@ -1,74 +1,120 @@
 import streamlit as st
-import re
 from database import supabase
 
-def validar_prefixo(prefixo):
-    padrao = r'^[a-zA-Z0-9._]+$'
-    return re.match(padrao, prefixo) is not None
-
-def formatar_telefone(tel):
-    numeros = re.sub(r'\D', '', tel)
-    if len(numeros) == 11: return f"({numeros[:2]}) {numeros[2:7]}-{numeros[7:]}"
-    elif len(numeros) == 10: return f"({numeros[:2]}) {numeros[2:6]}-{numeros[6:]}"
-    return tel
-
 def render_usuario_gestao():
-    st.title("👤 Gerenciamento de Perfil")
-    
-    user_logado = st.session_state.user
-    nivel = st.session_state.get('nivel', 'sdr').upper()
+    # 1. Identificação do usuário logado
+    nivel_logado = str(st.session_state.get('nivel', 'SDR')).upper()
+    login_proprio = st.session_state.get('user_login', '')
+    nome_proprio = st.session_state.get('user_nome', 'Usuário')
 
-    res = supabase.table("usuarios").select("*").eq("nome", user_logado).execute()
-    if not res.data:
-        st.error("Perfil não encontrado.")
-        return
+    st.title("👤 Gestão de Perfil e Usuários")
 
-    dados_user = res.data[0]
-    prefixo_atual = dados_user.get('email', '').split('@')[0]
+    # --- BUSCA DADOS ATUALIZADOS DO PRÓPRIO USUÁRIO (Incluindo telefone) ---
+    try:
+        res_me = supabase.table("usuarios").select("*").eq("user", login_proprio).execute()
+        meus_dados = res_me.data[0] if res_me.data else {}
+    except:
+        meus_dados = {}
 
-    st.subheader("Meus Dados")
-    st.text_input("Nome", value=dados_user['nome'], disabled=True)
-    st.text_input("Usuário", value=dados_user['user'], disabled=True)
-    
-    st.write("**E-mail Institucional**")
-    cp, cd = st.columns([2, 1])
-    with cp:
-        st.text_input("Prefixo", value=prefixo_atual, disabled=(nivel != "ADMIN"), label_visibility="collapsed")
-    with cd:
-        st.info("@grupoacelerador.com.br")
-    
-    st.text_input("Telefone", value=dados_user.get('telefone', ''), disabled=(nivel != "ADMIN"))
+    # --- SEÇÃO 1: MEU PERFIL (Visível para todos) ---
+    with st.container(border=True):
+        st.subheader("Meus Dados")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.write(f"**Nome:** {nome_proprio}")
+        c2.write(f"**Login:** {login_proprio}")
+        c3.write(f"**Nível:** {nivel_logado}")
+        c4.write(f"**Telefone:** {meus_dados.get('telefone', 'Não informado')}")
 
     with st.expander("🔐 Alterar Minha Senha"):
-        n_senha = st.text_input("Nova Senha", type="password")
-        if st.button("Atualizar Senha", use_container_width=True):
-            if n_senha:
-                supabase.table("usuarios").update({"senha": n_senha}).eq("id", dados_user['id']).execute()
-                st.success("Senha alterada!")
-
-    if nivel == "ADMIN":
-        st.divider()
-        st.subheader("🛠️ Gestão de Usuários (ADMIN)")
-        todos = supabase.table("usuarios").select("*").execute().data
-        if todos:
-            sel = st.selectbox("Selecionar Colaborador", [u['nome'] for u in todos])
-            target = next(u for u in todos if u['nome'] == sel)
-            
-            e_pref = st.text_input("Editar Prefixo", value=target.get('email','').split('@')[0])
-            e_tel = st.text_input("Editar Telefone", value=target.get('telefone',''))
-            e_senha = st.text_input("Resetar Senha", type="password")
-
-            if st.button(f"Salvar Alterações em {sel}", use_container_width=True):
-                email_f = f"{e_pref.strip().lower()}@grupoacelerador.com.br"
-                
-                # Valida se o e-mail novo já existe em OUTRO usuário
-                dup = supabase.table("usuarios").select("id").eq("email", email_f).neq("id", target['id']).execute()
-                
-                if len(dup.data) > 0:
-                    st.error("❌ Este e-mail já está em uso por outro colaborador.")
+        with st.form("form_minha_senha"):
+            nova_senha = st.text_input("Nova Senha", type="password")
+            confirmar = st.text_input("Confirme a Nova Senha", type="password")
+            if st.form_submit_button("Atualizar Minha Senha"):
+                if nova_senha == confirmar and len(nova_senha) >= 4:
+                    try:
+                        supabase.table("usuarios").update({"senha": nova_senha}).eq("user", login_proprio).execute()
+                        st.success("Sua senha foi atualizada!")
+                    except Exception as e:
+                        st.error(f"Erro ao atualizar: {e}")
                 else:
-                    upd = {"email": email_f, "telefone": formatar_telefone(e_tel)}
-                    if e_senha: upd["senha"] = e_senha
-                    supabase.table("usuarios").update(upd).eq("id", target['id']).execute()
-                    st.success("Dados atualizados!")
-                    st.rerun()
+                    st.error("Senhas não coincidem ou são muito curtas.")
+
+    # --- SEÇÃO 2: PAINEL ADMINISTRATIVO (Apenas para ADM) ---
+    if nivel_logado == "ADMIN":
+        st.divider()
+        st.header("🛠️ Painel Administrativo")
+        st.markdown("Gerencie o acesso e as informações de todos os colaboradores.")
+
+        try:
+            # Busca todos os usuários cadastrados
+            res = supabase.table("usuarios").select("*").order("nome").execute()
+            lista_usuarios = res.data
+        except Exception as e:
+            st.error(f"Erro ao carregar usuários: {e}")
+            return
+
+        if lista_usuarios:
+            # Seletor de usuário para edição
+            dict_usuarios = {f"{u['nome']} ({u['user']})": u for u in lista_usuarios}
+            selecionado = st.selectbox("Selecione um colaborador para editar:", [""] + list(dict_usuarios.keys()))
+
+            if selecionado:
+                user_data = dict_usuarios[selecionado]
+                
+                with st.form(f"form_edit_adm_{user_data['user']}"):
+                    st.subheader(f"Gerenciar Acesso: {user_data['user']}")
+                    
+                    col_ed1, col_ed2, col_ed3 = st.columns(3)
+                    
+                    # Nome pode ser corrigido
+                    novo_nome = col_ed1.text_input("Nome de Cadastro", value=user_data.get('nome', ''))
+                    
+                    # --- ADIÇÃO DO CAMPO TELEFONE NA EDIÇÃO ---
+                    novo_telefone = col_ed2.text_input("Telefone/WhatsApp", value=user_data.get('telefone', ''))
+                    
+                    # NÍVEL DE PERMISSÃO DESABILITADO
+                    nivel_atual = user_data.get('nivel', 'SDR')
+                    col_ed3.text_input("Nível de Permissão (Fixo)", value=nivel_atual, disabled=True)
+                    
+                    st.divider()
+                    
+                    col_op1, col_op2 = st.columns(2)
+                    with col_op1:
+                        reset_senha = st.text_input("Resetar Senha", type="password", placeholder="Deixe em branco para manter")
+                    
+                    with col_op2:
+                        status_db = user_data.get('esta_ativo', True)
+                        ativar_user = st.toggle("Acesso Habilitado", value=status_db)
+                        st.caption("🟢 Ativo" if ativar_user else "🔴 Bloqueado")
+
+                    if st.form_submit_button("💾 Salvar Alterações"):
+                        update_payload = {
+                            "nome": novo_nome,
+                            "telefone": novo_telefone,
+                            "esta_ativo": ativar_user
+                        }
+                        
+                        if reset_senha:
+                            update_payload["senha"] = reset_senha
+                        
+                        try:
+                            # 1. Atualiza o usuário
+                            supabase.table("usuarios").update(update_payload).eq("user", user_data['user']).execute()
+                            
+                            # 2. REGISTRA NA AUDITORIA
+                            detalhes_log = f"Editou dados (Telefone: {novo_telefone}, Ativo: {ativar_user})."
+                            if reset_senha:
+                                detalhes_log += " Senha foi resetada."
+                            
+                            auditoria_payload = {
+                                "admin_responsavel": nome_proprio,
+                                "colaborador_afetado": user_data.get('nome'),
+                                "acao": "ALTERAÇÃO DE USUÁRIO",
+                                "detalhes": detalhes_log
+                            }
+                            supabase.table("auditoria").insert(auditoria_payload).execute()
+                            
+                            st.success(f"Alterações para {user_data['nome']} salvas com sucesso!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao salvar: {e}")

@@ -1,109 +1,124 @@
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
-from database import get_all_records_db  
-from engine import THEME, ASSERTIVITY_CUTOFF 
+import plotly.express as px
+from database import get_all_records_db, supabase
+from datetime import datetime, timedelta
 
 def render_dashboard():
-    nivel = st.session_state.get('nivel', 'sdr').upper()
-    
-    # Título dinâmico
-    st.title(f"Dashboard Performance - {'Gestão' if nivel == 'ADMIN' else st.session_state.user}")
+    # 1. Identificação do Usuário por Nome Completo e Nível
+    nivel_usuario = str(st.session_state.get('nivel', 'SDR')).upper()
+    # Usamos o Nome Completo como chave de busca principal
+    nome_completo_logado = st.session_state.get('user_nome', 'Usuário')
 
-    # 1. CARREGAMENTO E TRATAMENTO
+    # 2. Busca os dados no Supabase
     df = get_all_records_db("monitorias")
-    if df.empty:
-        st.warning("Nenhum dado encontrado no banco de dados.")
+    
+    if df is None or df.empty:
+        st.info("💡 Nenhuma monitoria encontrada no banco de dados.")
         return
 
-    df['data'] = pd.to_datetime(df['data'])
-    df['MesAno'] = df['data'].dt.to_period('M').astype(str)
+    # 3. Tratamento de Dados
+    df['nota'] = pd.to_numeric(df['nota'], errors='coerce')
+    
+    if 'criado_em' in df.columns:
+        df['criado_em'] = pd.to_datetime(df['criado_em'])
+        # Ordenação cronológica para o gráfico
+        df = df.sort_values(by='criado_em')
+        df['data_formatada'] = df['criado_em'].dt.strftime('%d/%m/%Y')
 
-    if nivel == 'SDR':
-        df = df[df['sdr'] == st.session_state.user]
+    st.title("📊 Dashboard de Performance")
+
+    # --- SEÇÃO DE FILTROS ---
+    c1, c2 = st.columns([1, 1.5])
     
-    # 2. KPIs (Métricas)
-    avg_score = df['nota'].mean()
-    col1, col2, col3 = st.columns(3)
+    if nivel_usuario == "ADMIN":
+        # Admin seleciona qualquer Nome Completo que exista na coluna 'sdr'
+        lista_sdrs = sorted(df['sdr'].unique().tolist())
+        sdr_escolhido = c1.selectbox("Filtrar por SDR (Nome Completo):", ["Ver Todos"] + lista_sdrs)
+    else:
+        # SDR travado no próprio Nome Completo
+        st.info(f"Visualizando resultados de: **{nome_completo_logado}**")
+        sdr_escolhido = nome_completo_logado
+
+    # Filtro de Data
+    hoje = datetime.now().date()
+    data_min = df['criado_em'].min().date() if not df.empty else hoje
+    # Define início padrão em 30 dias atrás ou na data da primeira monitoria
+    inicio_padrao = max(data_min, hoje - timedelta(days=30))
     
-    with col1:
-        # Laranja se acima da meta, Branco se abaixo
-        color_metric = "#f77a00" if avg_score >= 85 else "#FFFFFF"
-        st.markdown(f"<p style='color:white; margin-bottom:-10px;'>Média de Assertividade</p><h2 style='color:{color_metric};'>{avg_score:.1f}%</h2>", unsafe_allow_html=True)
-    with col2:
-        st.metric("Total Monitorias", len(df))
-    with col3:
-        status_pendente = len(df[df['status_contestacao'] == 'Pendente'])
-        st.metric("Contestações Pendentes", status_pendente)
+    intervalo_datas = c2.date_input(
+        "Selecione o Período:", 
+        value=(inicio_padrao, hoje),
+        max_value=hoje
+    )
+
+    # 4. Aplicação Rígida dos Filtros no DataFrame
+    df_filtrado = df.copy()
+    
+    # Filtro de Identidade (SDR vê apenas o dele)
+    if nivel_usuario == "SDR":
+        df_filtrado = df_filtrado[df_filtrado['sdr'] == nome_completo_logado]
+    elif sdr_escolhido != "Ver Todos":
+        df_filtrado = df_filtrado[df_filtrado['sdr'] == sdr_escolhido]
+
+    # Filtro de Período
+    if isinstance(intervalo_datas, tuple) and len(intervalo_datas) == 2:
+        df_filtrado = df_filtrado[
+            (df_filtrado['criado_em'].dt.date >= intervalo_datas[0]) & 
+            (df_filtrado['criado_em'].dt.date <= intervalo_datas[1])
+        ]
+
+    # Verificação de dados após filtros
+    if df_filtrado.empty:
+        st.warning(f"⚠️ Nenhuma monitoria encontrada para os critérios selecionados.")
+        return
+
+    # --- KPI'S PRINCIPAIS ---
+    m1, m2, m3 = st.columns(3)
+    media_nota = df_filtrado['nota'].mean()
+    total_mon = len(df_filtrado)
+    
+    m1.metric("Média de Qualidade", f"{media_nota:.1f}%")
+    m2.metric("Total de Monitorias", total_mon)
+    
+    # Cálculo simples de evolução (comparando com a média total do filtro)
+    m3.metric("Status", "Estável" if media_nota >= 90 else "Atenção", 
+              delta="Meta 90%", delta_color="normal" if media_nota >= 90 else "inverse")
 
     st.divider()
 
-    # 3. GRÁFICOS COM LÓGICA DE GRADIENTE CONDICIONAL
-    col_left, col_right = st.columns(2)
+    # --- GRÁFICOS ---
+    
+    # Gráfico de Evolução (Linha)
+    fig_evolucao = px.line(
+        df_filtrado, 
+        x='data_formatada', 
+        y='nota', 
+        markers=True, 
+        text='nota',
+        title="Evolução de Qualidade no Período",
+        labels={'data_formatada': 'Data', 'nota': 'Nota (%)'}
+    )
+    fig_evolucao.update_traces(textposition='top center', texttemplate='%{text}%')
+    fig_evolucao.update_yaxes(range=[0, 110]) # Garante escala de 0 a 100+
+    st.plotly_chart(fig_evolucao, use_container_width=True)
 
-    with col_left:
-        st.subheader("Evolução Mensal")
-        trend = df.groupby('MesAno')['nota'].mean().reset_index()
-        
-        # Gráfico de linha usando a cor de destaque (Laranja)
-        fig_trend = go.Figure()
-        fig_trend.add_trace(go.Scatter(
-            x=trend['MesAno'], y=trend['nota'],
-            mode='lines+markers',
-            line=dict(color='#f77a00', width=4),
-            marker=dict(color='#FFFFFF', size=8)
-        ))
-        fig_trend.update_layout(
-            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-            font_color="white", xaxis=dict(showgrid=False),
-            yaxis=dict(gridcolor='rgba(255,255,255,0.1)', range=[0, 105])
-        )
-        st.plotly_chart(fig_trend, use_container_width=True)
+    # Se Admin estiver vendo "Ver Todos", mostra um ranking por SDR
+    if nivel_usuario == "ADMIN" and sdr_escolhido == "Ver Todos":
+        st.subheader("🏆 Ranking de Qualidade (Média)")
+        ranking = df_filtrado.groupby('sdr')['nota'].mean().reset_index().sort_values(by='nota', ascending=False)
+        fig_ranking = px.bar(ranking, x='sdr', y='nota', color='nota', color_continuous_scale='RdYlGn')
+        st.plotly_chart(fig_ranking, use_container_width=True)
 
-    with col_right:
-        st.subheader("Performance por Período")
-        # Barras que mudam de cor conforme a nota
-        fig_bars = go.Figure()
-        
-        for i, row in trend.iterrows():
-            # Acima de 85: Laranja (#f77a00) | Abaixo de 84: Amarelo/Vermelho (#fcbf1f)
-            color_bar = "#f77a00" if row['nota'] >= 85 else "#fcbf1f"
-            line_bar = "#c36000" if row['nota'] >= 85 else "#dd492b"
-            
-            fig_bars.add_trace(go.Bar(
-                x=[row['MesAno']], y=[row['nota']],
-                marker=dict(color=color_bar, line=dict(color=line_bar, width=2)),
-                showlegend=False
-            ))
-
-        fig_bars.update_layout(
-            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-            font_color="white", yaxis=dict(gridcolor='rgba(255,255,255,0.1)', range=[0, 105])
-        )
-        st.plotly_chart(fig_bars, use_container_width=True)
-
-    # 4. RANKING PARA ADMIN (COM GRADIENTE)
-    if nivel == 'ADMIN':
-        st.divider()
-        st.subheader("Ranking Geral de SDRs")
-        ranking = df.groupby('sdr')['nota'].mean().sort_values(ascending=False).reset_index()
-        
-        fig_rank = go.Figure()
-        
-        for _, row in ranking.iterrows():
-            c_top = "#f77a00" if row['nota'] >= 85 else "#fcbf1f"
-            c_bottom = "#c36000" if row['nota'] >= 85 else "#dd492b"
-            
-            fig_rank.add_trace(go.Bar(
-                x=[row['sdr']], y=[row['nota']],
-                marker=dict(color=c_top, line=dict(color=c_bottom, width=2)),
-                text=f"{row['nota']:.1f}%", textposition='auto',
-                showlegend=False
-            ))
-
-        fig_rank.update_layout(
-            plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-            font_color="white", xaxis=dict(showgrid=False),
-            yaxis=dict(gridcolor='rgba(255,255,255,0.1)', range=[0, 110])
-        )
-        st.plotly_chart(fig_rank, use_container_width=True)
+    # --- TABELA DE DETALHAMENTO ---
+    st.subheader("📋 Detalhamento das Avaliações")
+    
+    # Preparamos uma versão limpa da tabela para exibição
+    df_exibicao = df_filtrado[['data_formatada', 'sdr', 'nota', 'monitor_responsavel', 'observacoes']].copy()
+    df_exibicao.columns = ['Data', 'SDR', 'Nota (%)', 'Monitor', 'Feedback/Obs']
+    
+    st.dataframe(
+        df_exibicao.sort_values(by='Data', ascending=False),
+        use_container_width=True, 
+        hide_index=True
+    )

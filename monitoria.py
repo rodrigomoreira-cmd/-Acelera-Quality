@@ -1,78 +1,133 @@
 import streamlit as st
-from database import supabase
-from engine import CHECKLIST_MODEL, calculate_score_details, THEME
+from database import get_criterios_ativos, save_monitoria, supabase
 
-def render_monitoria():
-    # Estilização para as cores solicitadas
-    st.markdown(f"""
-        <style>
-        h1, h2, h3 {{ color: {THEME['text']} !important; }}
-        .stRadio > label {{ color: {THEME['text']} !important; }}
-        </style>
-    """, unsafe_allow_html=True)
-
+def render_nova_monitoria():
     st.title("📝 Nova Monitoria de Qualidade")
-
-    # 1. BUSCA DE SDRs CADASTRADOS
+    st.markdown("Avalie os itens conforme o checklist. Lembre-se: **NC Grave zera a nota final.**")
+    
+    # 1. Busca os critérios dinâmicos ativos
+    df_criterios = get_criterios_ativos()
+    
+    # 2. Busca Usuários com tratamento de erro (Focado no Nome Completo)
     try:
-        res_usuarios = supabase.table("usuarios").select("nome").eq("nivel", "sdr").execute()
-        # Adicionamos uma opção em branco no início da lista
-        lista_sdrs = [""] + [user['nome'] for user in res_usuarios.data] if res_usuarios.data else [""]
+        # Buscamos 'nome' e 'user' para garantir que salvamos o NOME COMPLETO como chave
+        response = supabase.table("usuarios").select("nome, user, nivel").execute()
+        todos_usuarios = response.data
+        
+        # Filtra apenas quem tem nível SDR (independente de maiúsculas/minúsculas)
+        lista_sdrs_completa = [
+            u['nome'] for u in todos_usuarios 
+            if str(u.get('nivel', '')).strip().upper() == "SDR" and u.get('nome')
+        ]
     except Exception as e:
         st.error(f"Erro ao carregar lista de SDRs: {e}")
-        lista_sdrs = [""]
+        lista_sdrs_completa = []
 
-    if len(lista_sdrs) <= 1:
-        st.warning("⚠️ Nenhum SDR cadastrado encontrado. Cadastre um SDR na tela de Cadastro primeiro.")
+    if df_criterios.empty:
+        st.warning("⚠️ Cadastre critérios em 'Config. Critérios' primeiro.")
         return
 
-    # 2. FORMULÁRIO DE MONITORIA
-    with st.form("form_monitoria"):
+    with st.form("form_monitoria_v5"):
         col1, col2 = st.columns(2)
         
-        # O index=0 aponta para o campo vazio ("")
-        sdr_selecionado = col1.selectbox(
-            "Selecione o SDR", 
-            options=lista_sdrs, 
-            index=0,
-            format_func=lambda x: "Selecione um nome..." if x == "" else x
-        )
+        # --- SELEÇÃO DO SDR POR NOME COMPLETO ---
+        if lista_sdrs_completa:
+            # Opções começando com campo vazio para evitar salvamento acidental
+            opcoes_nomes = ["Selecione o Nome do SDR..."] + sorted(lista_sdrs_completa)
+            
+            sdr_escolhido = col1.selectbox(
+                "SDR Avaliado (Nome Completo)", 
+                options=opcoes_nomes,
+                index=0
+            )
+        else:
+            st.info("💡 Nenhum SDR com nome cadastrado encontrado.")
+            sdr_escolhido = col1.text_input("SDR Avaliado (Digite o Nome Completo)")
+
+        # Monitor Responsável (Fixo pelo login da sessão)
+        user_logado_login = st.session_state.get('user', 'admin')
+        user_logado_nome = st.session_state.get('user_nome', 'Monitor')
         
-        data_ref = col2.date_input("Data da Monitoria")
+        col2.text_input("Monitor Responsável", value=user_logado_nome, disabled=True)
         
-        st.divider()
+        st.markdown("---")
         
-        checklist_state = {}
-        for item in CHECKLIST_MODEL:
-            st.markdown(f"**{item['group']}**: {item['label']}")
-            checklist_state[item['id']] = st.radio(
-                "Avaliação", ["C", "NC", "NC Grave", "NSA"], 
-                key=f"rad_{item['id']}", horizontal=True
-            ).lower()
+        # --- RENDERIZAÇÃO DOS ITENS DE AVALIAÇÃO ---
+        respostas = {}
+        # Usa 'grupo' para organizar os itens na tela
+        coluna_grupo = 'grupo' if 'grupo' in df_criterios.columns else 'id'
+        df_criterios = df_criterios.sort_values(by=[coluna_grupo, 'id'])
         
-        st.divider()
-        obs = st.text_area("Observações Gerais / Feedbacks")
-        
-        if st.form_submit_button("Salvar Monitoria"):
-            # VALIDAÇÃO: Impede salvar se o SDR estiver em branco
-            if sdr_selecionado == "":
-                st.error("❌ Erro: Você precisa selecionar um SDR antes de salvar!")
-            else:
-                results = calculate_score_details(CHECKLIST_MODEL, checklist_state)
+        for grupo, itens in df_criterios.groupby(coluna_grupo, sort=False):
+            st.subheader(f"📂 {grupo}")
+            for _, row in itens.iterrows():
+                nome_c = row['nome_criterio']
+                peso_c = row.get('peso', 1)
                 
-                payload = {
-                    "sdr": sdr_selecionado,
-                    "data": str(data_ref),
-                    "nota": results['finalNota'],
-                    "observacoes": obs,
-                    "monitor_responsavel": st.session_state.user,
-                    "contestada": False,
-                    "status_contestacao": "Nenhum"
+                respostas[nome_c] = {
+                    "valor": st.radio(
+                        f"**{nome_c}** (Peso: {peso_c})", 
+                        ["C", "NC", "NC Grave", "NSA"], 
+                        horizontal=True, 
+                        key=f"mon_crit_{row['id']}"
+                    ),
+                    "peso": peso_c
                 }
+
+        st.markdown("---")
+        observacoes = st.text_area("✍️ Feedback para o SDR (Aparecerá no portal dele)")
+
+        # --- PROCESSAMENTO DO FORMULÁRIO ---
+        btn_salvar = st.form_submit_button("Finalizar Monitoria")
+
+        if btn_salvar:
+            # Validação: Não permite salvar se não escolheu um SDR real
+            if sdr_escolhido == "Selecione o Nome do SDR..." or not sdr_escolhido:
+                st.error("❌ Erro: Selecione o nome do SDR antes de salvar.")
+                st.stop()
+
+            # Cálculo Matemático da Nota
+            total_possivel = 0
+            total_obtido = 0
+            tem_nc_grave = False
+            falhas_graves = []
+            
+            for nome, item in respostas.items():
+                resp = item["valor"]
+                peso = item["peso"]
                 
-                try:
-                    supabase.table("monitorias").insert(payload).execute()
-                    st.success(f"✅ Monitoria de {sdr_selecionado} salva com sucesso!")
-                    st.balloons()
-                except Exception as e:
-                    st.error(f"Erro ao salvar no banco: {e}")
+                if resp == "NC Grave":
+                    tem_nc_grave = True
+                    falhas_graves.append(nome)
+                
+                if resp == "C":
+                    total_obtido += peso
+                    total_possivel += peso
+                elif resp in ["NC", "NC Grave"]:
+                    total_possivel += peso
+                # NSA não entra no cálculo (não soma no possível nem no obtido)
+
+            # Regra de Negócio: NC Grave zera a nota automaticamente
+            nota_final = 0.0 if tem_nc_grave else (total_obtido / total_possivel * 100 if total_possivel > 0 else 100)
+            
+            # Montagem do objeto para o banco de dados
+            payload = {
+                "sdr": sdr_escolhido, # Aqui salvamos o NOME COMPLETO (Ex: Ani Gabrielli)
+                "nota": round(nota_final, 2),
+                "observacoes": observacoes,
+                "monitor_responsavel": user_logado_nome,
+                "detalhes": {n: i["valor"] for n, i in respostas.items()}
+            }
+            
+            try:
+                save_monitoria(payload)
+                
+                if tem_nc_grave:
+                    st.error(f"🚨 Nota Zero aplicada devido a NC Grave em: {', '.join(falhas_graves)}")
+                else:
+                    st.success(f"✅ Monitoria de {sdr_escolhido} salva com sucesso! Nota: {nota_final:.2f}%")
+                
+                st.balloons()
+                
+            except Exception as e:
+                st.error(f"Erro técnico ao salvar no banco: {e}")
