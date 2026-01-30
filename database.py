@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 from supabase import create_client
 
+# Apenas as definições de conexão e funções de banco aqui!
+
 # --- INICIALIZAÇÃO GLOBAL ---
 @st.cache_resource
 def init_connection():
