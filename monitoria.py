@@ -1,97 +1,85 @@
 import streamlit as st
+import pandas as pd
 from database import get_criterios_ativos, save_monitoria, supabase
 
 def render_nova_monitoria():
     st.title("📝 Nova Monitoria de Qualidade")
-    st.markdown("Avalie os itens conforme o checklist. Lembre-se: **NC Grave zera a nota final.**")
+    st.markdown("Avalie os itens conforme o checklist dinâmico. **NC Grave zera a nota final.**")
     
-    # 1. Busca os critérios dinâmicos ativos
+    # 1. Busca os critérios dinâmicos ativos no banco
     df_criterios = get_criterios_ativos()
     
-    # 2. Busca Usuários com tratamento de erro
+    # 2. Busca lista de SDRs ativos para o Selectbox
     try:
-        response = supabase.table("usuarios").select("nome, user, nivel").execute()
-        todos_usuarios = response.data
-        
-        lista_sdrs_completa = [
-            u['nome'] for u in todos_usuarios 
-            if str(u.get('nivel', '')).strip().upper() == "SDR" and u.get('nome')
-        ]
+        response = supabase.table("usuarios").select("nome").eq("nivel", "SDR").eq("esta_ativo", True).order("nome").execute()
+        lista_sdrs = [u['nome'] for u in response.data] if response.data else []
     except Exception as e:
         st.error(f"Erro ao carregar lista de SDRs: {e}")
-        lista_sdrs_completa = []
+        lista_sdrs = []
 
     if df_criterios.empty:
-        st.warning("⚠️ Cadastre critérios em 'Config. Critérios' primeiro.")
+        st.warning("⚠️ Nenhum critério ativo encontrado. Cadastre critérios em 'Config. Critérios' primeiro.")
         return
 
-    with st.form("form_monitoria_v5"):
-        # --- PRIMEIRA LINHA: SDR E MONITOR ---
-        col1, col2 = st.columns(2)
+    with st.form("form_monitoria_dinamica", clear_on_submit=True):
+        # --- CABEÇALHO ---
+        col_sdr, col_vazio = st.columns([2, 2])
+        sdr_escolhido = col_sdr.selectbox("Selecione o SDR", options=["Selecione..."] + lista_sdrs)
         
-        if lista_sdrs_completa:
-            opcoes_nomes = ["Selecione o Nome do SDR..."] + sorted(lista_sdrs_completa)
-            sdr_escolhido = col1.selectbox(
-                "SDR Avaliado (Nome Completo)", 
-                options=opcoes_nomes,
-                index=0
-            )
-        else:
-            sdr_escolhido = col1.text_input("SDR Avaliado (Digite o Nome Completo)")
-
-        user_logado_nome = st.session_state.get('user_nome', 'Monitor')
-        col2.text_input("Monitor Responsável", value=user_logado_nome, disabled=True)
-        
-        # --- SEGUNDA LINHA: LINKS EXTERNOS (SELENE E NÉCTAR) ---
         st.markdown("##### 🔗 Links de Referência")
-        col_link1, col_link2 = st.columns(2)
-        link_selene = col_link1.text_input("Link SeleneBot", placeholder="https://selenebot.com/...")
-        link_nectar = col_link2.text_input("Link Néctar CRM", placeholder="https://app.nectarcrm.com.br/...")
+        c_link1, c_link2 = st.columns(2)
+        link_selene = c_link1.text_input("Link SeleneBot", placeholder="https://web.whatsapp.com/...")
+        link_nectar = c_link2.text_input("Link Néctar CRM", placeholder="https://app.nectarcrm.com.br/...")
 
-        st.markdown("---")
+        st.divider()
         
-        # --- RENDERIZAÇÃO DOS ITENS DE AVALIAÇÃO ---
+        # --- RENDERIZAÇÃO DINÂMICA DOS CRITÉRIOS POR GRUPO ---
         respostas = {}
-        coluna_grupo = 'grupo' if 'grupo' in df_criterios.columns else 'id'
-        df_criterios = df_criterios.sort_values(by=[coluna_grupo, 'id'])
+        grupos = df_criterios['grupo'].unique()
         
-        for grupo, itens in df_criterios.groupby(coluna_grupo, sort=False):
-            st.subheader(f"📂 {grupo}")
-            for _, row in itens.iterrows():
-                nome_c = row['nome_criterio']
-                peso_c = row.get('peso', 1)
+        for grupo in grupos:
+            with st.expander(f"📂 {grupo}", expanded=True):
+                itens = df_criterios[df_criterios['grupo'] == grupo]
                 
-                respostas[nome_c] = {
-                    "valor": st.radio(
-                        f"**{nome_c}** (Peso: {peso_c})", 
-                        ["C", "NC", "NC Grave", "NSA"], 
-                        horizontal=True, 
-                        key=f"mon_crit_{row['id']}"
-                    ),
-                    "peso": peso_c
-                }
+                for _, row in itens.iterrows():
+                    nome_c = row['nome_criterio']
+                    peso_c = float(row.get('peso', 1.0))
+                    
+                    # Interface de rádio para cada item
+                    respostas[nome_c] = {
+                        "valor": st.radio(
+                            f"**{nome_c}** (Peso: {peso_c})",
+                            options=["C", "NC", "NC Grave", "NSA"],
+                            index=0, # Default em 'Conforme' para agilizar
+                            horizontal=True,
+                            key=f"crit_{row['id']}",
+                            help="C: Conforme | NC: Não Conforme | NSA: Não se aplica"
+                        ),
+                        "peso": peso_c
+                    }
+        
+        st.divider()
+        observacoes = st.text_area("✍️ Feedback e Observações", placeholder="Pontos positivos, pontos a melhorar e orientações dadas ao SDR...")
 
-        st.markdown("---")
-        observacoes = st.text_area("✍️ Feedback para o SDR (Aparecerá no portal dele)")
-
-        # --- PROCESSAMENTO DO FORMULÁRIO ---
-        btn_salvar = st.form_submit_button("Finalizar Monitoria")
-
-        if btn_salvar:
-            if sdr_escolhido == "Selecione o Nome do SDR..." or not sdr_escolhido:
-                st.error("❌ Erro: Selecione o nome do SDR antes de salvar.")
+        # --- PROCESSAMENTO DO CÁLCULO ---
+        if st.form_submit_button("🚀 Finalizar e Salvar Monitoria", use_container_width=True, type="primary"):
+            # Validações Iniciais
+            if sdr_escolhido == "Selecione...":
+                st.error("❌ Selecione o SDR antes de salvar.")
                 st.stop()
+            
+            if not link_selene or not link_nectar:
+                st.warning("⚠️ É recomendável preencher os links de referência para futuras consultas.")
 
-            # Cálculo Matemático da Nota
-            total_possivel = 0
-            total_obtido = 0
+            total_possivel = 0.0
+            total_obtido = 0.0
             tem_nc_grave = False
             falhas_graves = []
-            
+
             for nome, item in respostas.items():
                 resp = item["valor"]
                 peso = item["peso"]
-                
+
                 if resp == "NC Grave":
                     tem_nc_grave = True
                     falhas_graves.append(nome)
@@ -101,29 +89,35 @@ def render_nova_monitoria():
                     total_possivel += peso
                 elif resp in ["NC", "NC Grave"]:
                     total_possivel += peso
+                # NSA é ignorado no cálculo
 
-            nota_final = 0.0 if tem_nc_grave else (total_obtido / total_possivel * 100 if total_possivel > 0 else 100)
-            
-            # Montagem do objeto para o banco de dados (Payload atualizado com links)
+            # Cálculo final da nota
+            if tem_nc_grave:
+                nota_final = 0.0
+            else:
+                nota_final = (total_obtido / total_possivel * 100) if total_possivel > 0 else 100.0
+
+            # Montagem do Payload
             payload = {
                 "sdr": sdr_escolhido,
                 "nota": round(nota_final, 2),
-                "observacoes": observacoes,
-                "monitor_responsavel": user_logado_nome,
                 "link_selene": link_selene,
                 "link_nectar": link_nectar,
-                "detalhes": {n: i["valor"] for n, i in respostas.items()}
+                "observacoes": observacoes,
+                "monitor_responsavel": st.session_state.get('user_nome', 'Admin'),
+                "detalhes": {n: i["valor"] for n, i in respostas.items()} # JSON
             }
-            
+
             try:
                 save_monitoria(payload)
                 
                 if tem_nc_grave:
-                    st.error(f"🚨 Nota Zero aplicada devido a NC Grave em: {', '.join(falhas_graves)}")
+                    st.error(f"🚨 NOTA ZERO: Falha Grave em: {', '.join(falhas_graves)}")
                 else:
-                    st.success(f"✅ Monitoria de {sdr_escolhido} salva com sucesso! Nota: {nota_final:.2f}%")
+                    st.success(f"✅ Monitoria salva! Nota Final: {nota_final:.1f}%")
                 
                 st.balloons()
+                st.info("O SDR será notificado e a nota já está disponível no Dashboard.")
                 
             except Exception as e:
-                st.error(f"Erro técnico ao salvar no banco: {e}")
+                st.error(f"Erro técnico ao salvar: {e}")
