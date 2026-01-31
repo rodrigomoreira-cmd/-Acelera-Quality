@@ -2,157 +2,170 @@ import streamlit as st
 import pandas as pd
 from database import supabase, registrar_auditoria
 
-# --- CALLBACKS (Lógica de Execução) ---
-
-def marcar_lida(tabela, item_id):
-    """Atualiza o status de visualização para limpar notificações."""
-    try:
-        supabase.table(tabela).update({"visualizada": True}).eq("id", item_id).execute()
-    except Exception as e:
-        st.error(f"Erro ao atualizar visualização: {e}")
-
-def callback_enviar_contestacao(dados_mon, nome_sdr):
-    """Processa o envio da contestação pelo SDR."""
-    justificativa = st.session_state.get(f"input_just_{dados_mon['id']}", "").strip()
+# --- MODAL DE CONTESTAÇÃO (SDR) ---
+# Aqui usamos 'if button', então o st.rerun() É NECESSÁRIO para fechar o modal e atualizar a tela
+@st.dialog("📝 Abrir Contestação")
+def dialog_contestar(dados, nome_sdr):
+    st.markdown(f"**Monitoria de {pd.to_datetime(dados['criado_em']).strftime('%d/%m/%Y')}**")
+    st.markdown(f"Nota Original: **{dados['nota']}%**")
     
-    if len(justificativa) < 15:
-        st.session_state['msg_contest'] = ("erro", "⚠️ A justificativa deve conter pelo menos 15 caracteres para ser analisada.")
-        return
+    st.info(f"Feedback do Monitor:\n\n{dados.get('observacoes', 'Sem observações.')}")
+    
+    st.write("---")
+    st.write("Qual o motivo da sua discordância?")
+    motivo = st.text_area("Justificativa", height=150, placeholder="Ex: O cliente não solicitou X, por isso não ofertei...")
+    
+    col_b1, col_b2 = st.columns([1, 1])
+    
+    # Botão de Enviar (Lógica direta)
+    if col_b2.button("Enviar Contestação", type="primary", use_container_width=True):
+        if len(motivo) < 15:
+            st.error("⚠️ Escreva pelo menos 15 caracteres.")
+        else:
+            try:
+                res = supabase.table("contestacoes").insert({
+                    "monitoria_id": dados['id'],
+                    "sdr_nome": nome_sdr,
+                    "motivo": motivo,
+                    "status": "Pendente",
+                    "visualizada": False
+                }).execute()
+                
+                if res.data:
+                    supabase.table("monitorias").update({"contestada": True}).eq("id", dados['id']).execute()
+                    st.toast("✅ Contestação enviada!", icon="🚀")
+                    st.rerun() # NECESSÁRIO AQUI para fechar o dialog
+            except Exception as e:
+                st.error(f"Erro: {e}")
+    
+    if col_b1.button("Cancelar", use_container_width=True):
+        st.rerun() # Fecha o dialog
 
-    try:
-        # 1. Insere na tabela de contestações
-        res = supabase.table("contestacoes").insert({
-            "monitoria_id": dados_mon['id'],
-            "sdr_nome": nome_sdr,
-            "justificativa": justificativa,
-            "status": "Pendente",
-            "visualizada": False
-        }).execute()
-        
-        if res.data:
-            # 2. Marca a monitoria como 'contestada' para não aparecer na lista de novas
-            supabase.table("monitorias").update({"contestada": True}).eq("id", dados_mon['id']).execute()
-            st.session_state['msg_contest'] = ("sucesso", "✅ Contestação enviada! Aguarde a revisão do ADMIN.")
-            
-            # Limpa o campo de texto após enviar
-            st.session_state[f"input_just_{dados_mon['id']}"] = ""
-    except Exception as e:
-        st.session_state['msg_contest'] = ("erro", f"Erro ao enviar: {e}")
-
+# --- CALLBACKS ADMIN ---
+# Esta função é chamada via on_click. REMOVEMOS O ST.RERUN() DAQUI.
 def callback_julgamento_admin(id_c, id_m, status, nota=None):
-    """Processa o veredito do Administrador."""
     parecer = st.session_state.get(f"parecer_adm_{id_c}", "").strip()
+    
+    # Validação simples: se não tiver parecer, não faz nada (e avisa no toast)
     if not parecer:
-        st.session_state['msg_admin'] = ("erro", "⚠️ É obrigatório escrever um parecer para o SDR.")
+        st.toast("⚠️ Escreva o parecer antes de julgar.", icon="⚠️")
         return
+
     try:
-        # 1. Atualiza a contestação
+        # Atualiza a contestação
         supabase.table("contestacoes").update({
-            "status": status, 
-            "resposta_admin": parecer, 
-            "visualizada": False 
+            "status": status, "resposta_admin": parecer, "visualizada": False 
         }).eq("id", id_c).execute()
         
-        # 2. Se deferido, atualiza a nota na monitoria original
+        # Se foi deferido, atualiza a nota da monitoria
         if status == "Deferido" and nota is not None:
             supabase.table("monitorias").update({"nota": nota}).eq("id", id_m).execute()
+            
+        registrar_auditoria("JULGAMENTO", "Sistema", f"{status} | ID: {id_m}")
+        st.toast(f"✅ Julgado: {status}", icon="⚖️")
         
-        registrar_auditoria("JULGAMENTO CONTESTAÇÃO", "Sistema", f"Status: {status} | ID Monitoria: {id_m}")
-        st.session_state['msg_admin'] = ("sucesso", f"✅ Julgamento registrado como {status}!")
+        # OBS: st.rerun() FOI REMOVIDO DAQUI pois o on_click já faz o refresh
+        
     except Exception as e:
-        st.session_state['msg_admin'] = ("erro", f"Erro ao julgar: {e}")
+        st.error(f"Erro: {e}")
 
 # --- RENDERIZAÇÃO ---
-
 def render_contestacao():
     nivel = st.session_state.get('nivel', 'SDR').upper()
     nome_usuario = st.session_state.get('user_nome')
 
+    if not nome_usuario:
+        st.warning("Login necessário.")
+        st.stop()
+
     if nivel == "SDR":
-        # 1. NOTIFICAÇÕES (Sininho)
-        res_mon = supabase.table("monitorias").select("*").eq("sdr", nome_usuario).eq("visualizada", False).execute()
-        res_cont = supabase.table("contestacoes").select("*").eq("sdr_nome", nome_usuario).neq("status", "Pendente").eq("visualizada", False).execute()
-
-        if res_mon.data or res_cont.data:
-            st.markdown("### 🔔 Novidades")
-            for m in res_mon.data:
-                with st.container(border=True):
-                    c1, c2 = st.columns([5, 1])
-                    c1.info(f"✨ Nova Monitoria Disponível | Nota: {m['nota']}%")
-                    c2.button("OK", key=f"v_mon_{m['id']}", on_click=marcar_lida, args=("monitorias", m['id']))
-            
-            for n in res_cont.data:
-                with st.container(border=True):
-                    c1, c2 = st.columns([5, 1])
-                    cor = "green" if n['status'] == "Deferido" else "red"
-                    c1.markdown(f"⚖️ Resultado de Contestação: **:{cor}[{n['status']}]**\n\n*Parecer: {n['resposta_admin']}*")
-                    c2.button("OK", key=f"v_cont_{n['id']}", on_click=marcar_lida, args=("contestacoes", n['id']))
-            st.divider()
-
-        render_abas_sdr(nome_usuario)
+        render_view_sdr(nome_usuario)
     else:
         render_admin_view()
 
-def render_abas_sdr(nome_sdr):
-    tab1, tab2 = st.tabs(["🆕 Nova Contestação", "📜 Meu Histórico"])
+def render_view_sdr(nome_sdr):
+    st.title("Central de Contestação")
     
-    with tab1:
-        if 'msg_contest' in st.session_state:
-            t, txt = st.session_state.pop('msg_contest')
-            if t == "sucesso": st.success(txt); st.balloons()
-            else: st.error(txt)
-            
+    tab_novas, tab_hist = st.tabs(["📌 Disponíveis", "📂 Histórico"])
+    
+    # --- ABA 1: LISTA LIMPA ---
+    with tab_novas:
         res = supabase.table("monitorias").select("*").eq("sdr", nome_sdr).eq("contestada", False).execute()
+        
         if not res.data:
-            st.info("Você não possui monitorias pendentes de contestação.")
+            st.markdown("""
+                <div style="text-align: center; padding: 40px; color: #666;">
+                    <h3>✨ Tudo limpo!</h3>
+                    <p>Nenhuma monitoria pendente de análise.</p>
+                </div>
+            """, unsafe_allow_html=True)
         else:
-            opcoes = {f"Data: {r['criado_em'][:10]} | Nota Atual: {r['nota']}%": r for r in res.data}
-            sel = st.selectbox("Selecione a monitoria para contestar:", ["Selecione..."] + list(opcoes.keys()))
-            
-            if sel != "Selecione...":
-                dados = opcoes[sel]
+            for dados in res.data:
                 with st.container(border=True):
-                    st.markdown(f"**Feedback do Monitor:**\n> {dados.get('observacoes')}")
-                    st.text_area("Sua justificativa (seja específico):", key=f"input_just_{dados['id']}", height=150)
-                    st.button("🚀 Enviar para Revisão", on_click=callback_enviar_contestacao, args=(dados, nome_sdr), type="primary", use_container_width=True)
+                    c_nota, c_info, c_action = st.columns([1, 4, 1.5], vertical_alignment="center")
+                    
+                    nota = dados['nota']
+                    cor = "green" if nota >= 90 else "orange" if nota >= 70 else "red"
+                    
+                    with c_nota:
+                        st.markdown(f"<h2 style='color: {cor}; margin: 0; text-align: center;'>{nota}%</h2>", unsafe_allow_html=True)
+                    
+                    with c_info:
+                        data_fmt = pd.to_datetime(dados['criado_em']).strftime('%d/%m')
+                        st.markdown(f"**Data:** {data_fmt} • **Monitor:** {dados.get('monitor_responsavel', 'N/A')}")
+                        obs = dados.get('observacoes', '')
+                        if len(obs) > 60:
+                            st.caption(f"{obs[:60]}... (Ver completo ao contestar)")
+                        else:
+                            st.caption(obs if obs else "Sem observações.")
 
-    with tab2:
+                    with c_action:
+                        if st.button("Contestar", key=f"btn_open_{dados['id']}", use_container_width=True):
+                            dialog_contestar(dados, nome_sdr)
+
+    # --- ABA 2: HISTÓRICO ---
+    with tab_hist:
         res_h = supabase.table("contestacoes").select("*").eq("sdr_nome", nome_sdr).order("criado_em", desc=True).execute()
+        
         if res_h.data:
-            df = pd.DataFrame(res_h.data)
-            df['criado_em'] = pd.to_datetime(df['criado_em']).dt.strftime('%d/%m/%Y')
-            st.dataframe(df[['criado_em', 'status', 'resposta_admin', 'justificativa']], use_container_width=True, hide_index=True)
+            for item in res_h.data:
+                status = item['status']
+                with st.status(f"{pd.to_datetime(item['criado_em']).strftime('%d/%m')} - Pedido {status}", state="complete" if status != "Pendente" else "running", expanded=False):
+                    st.markdown(f"**Seu motivo:** {item['motivo']}")
+                    st.divider()
+                    if item.get('resposta_admin'):
+                        st.markdown(f"**Parecer da Qualidade:**\n> {item['resposta_admin']}")
+                    else:
+                        st.caption("Aguardando análise da gestão...")
         else:
-            st.info("Você ainda não realizou nenhuma contestação.")
+            st.caption("Nenhum registro encontrado.")
 
 def render_admin_view():
     st.subheader("⚖️ Central de Julgamento")
-    if 'msg_admin' in st.session_state:
-        t, txt = st.session_state.pop('msg_admin')
-        if t == "sucesso": st.success(txt)
-        else: st.error(txt)
-
-    # Busca contestações pendentes e traz os dados da monitoria relacionada (Join)
+    
     res = supabase.table("contestacoes").select("*, monitorias(*)").eq("status", "Pendente").execute()
     
     if not res.data:
-        st.success("✅ Nenhuma contestação pendente no momento!")
+        st.success("Tudo em dia.")
         return
-
+        
     for c in res.data:
         mon = c.get('monitorias', {})
+        
         with st.container(border=True):
-            col_info, col_voto = st.columns([3, 2])
+            col_left, col_right = st.columns([1, 2])
             
-            with col_info:
-                st.markdown(f"### SDR: {c['sdr_nome']}")
-                st.markdown(f"**Nota Original:** {mon.get('nota')}%")
-                st.warning(f"**Argumento do SDR:**\n\n{c['justificativa']}")
+            with col_left:
+                st.markdown(f"### {c['sdr_nome']}")
+                st.caption(f"Nota Original: {mon.get('nota')}%")
+                st.warning(f"🗣️ {c['motivo']}")
             
-            with col_voto:
-                st.text_area("Parecer do Julgador:", key=f"parecer_adm_{c['id']}", placeholder="Explique o motivo do aceite ou recusa...")
-                nova_n = st.number_input("Ajustar Nota para:", 0, 100, int(mon.get('nota', 0)), key=f"n_{c['id']}")
+            with col_right:
+                parecer = st.text_area("Parecer:", key=f"parecer_adm_{c['id']}", height=80)
+                nova_n = st.number_input("Nova Nota:", 0, 100, int(mon.get('nota', 0)), key=f"n_{c['id']}")
                 
                 c1, c2 = st.columns(2)
-                c1.button("✅ Deferir", on_click=callback_julgamento_admin, args=(c['id'], c['monitoria_id'], "Deferido", nova_n), use_container_width=True, type="primary")
-                c2.button("❌ Indeferir", on_click=callback_julgamento_admin, args=(c['id'], c['monitoria_id'], "Indeferido"), use_container_width=True)
+                
+                # AQUI USAMOS ON_CLICK, ENTÃO O CALLBACK NÃO PODE TER ST.RERUN()
+                c1.button("Deferir", on_click=callback_julgamento_admin, args=(c['id'], c['monitoria_id'], "Deferido", nova_n), type="primary", use_container_width=True, key=f"d_{c['id']}")
+                c2.button("Indeferir", on_click=callback_julgamento_admin, args=(c['id'], c['monitoria_id'], "Indeferido"), use_container_width=True, key=f"i_{c['id']}")

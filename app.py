@@ -11,48 +11,44 @@ from meu_perfil import render_meu_perfil
 from auditoria import render_auditoria 
 from relatorios import render_relatorios 
 from gestao_criterios import render_gestao_criterios 
-# Importação de funções do banco
-from database import get_all_records_db, supabase, buscar_contagem_notificacoes
 from style import apply_custom_styles
+from database import get_all_records_db, supabase, buscar_contagem_notificacoes, limpar_todas_notificacoes
 
 def main():
-    # Configuração inicial da página
+    # 1. Configuração inicial da página (Design Black)
     st.set_page_config(layout="wide", page_title="Acelera Quality", page_icon="🚀")
 
-    # --- 1. INICIALIZAÇÃO DE SEGURANÇA (ESTADO DA SESSÃO) ---
+    # Inicialização de variáveis de sessão
     if "authenticated" not in st.session_state:
         st.session_state.authenticated = False
     if "current_page" not in st.session_state:
         st.session_state.current_page = "DASHBOARD"
     if "user_nome" not in st.session_state:
-        st.session_state.user_nome = "Usuário"
-    if "nivel" not in st.session_state:
-        st.session_state.nivel = "SDR"
-    if "user_login" not in st.session_state:
-        st.session_state.user_login = ""
+        st.session_state.user_nome = None
 
-    # --- 2. VERIFICAÇÃO DE AUTENTICAÇÃO ---
+    # 2. Bloqueio de Acesso (Login)
     if not st.session_state.authenticated:
         render_login()
         st.stop()
 
-    # Aplica estilos CSS personalizados
+    # Aplica os estilos CSS (Preto/Dark)
     apply_custom_styles()
     
     nivel = str(st.session_state.get('nivel', 'SDR')).upper()
     nome_completo = st.session_state.get('user_nome', 'Usuário') 
+    user_login = st.session_state.get('user_login', '')
 
-    # --- 3. BARRA LATERAL (MENU DE NAVEGAÇÃO) ---
+    # --- 3. BARRA LATERAL (SIDEBAR) ---
     with st.sidebar:
-        # Lógica de exibição da Foto de Perfil
+        # Foto de Perfil
         try:
-            res_foto = supabase.table("usuarios").select("foto_url").eq("user", st.session_state.user_login).single().execute()
+            res_foto = supabase.table("usuarios").select("foto_url").eq("user", user_login).single().execute()
             foto_url = res_foto.data.get('foto_url') if res_foto.data else None
             
             if foto_url:
                 st.markdown(f"""
                     <div style="display: flex; justify-content: center; margin-bottom: 10px;">
-                        <img src="{foto_url}" style="width: 100px; height: 100px; border-radius: 50%; object-fit: cover; border: 2px solid #ff4b4b;">
+                        <img src="{foto_url}" style="width: 100px; height: 100px; border-radius: 50%; object-fit: cover; border: 2px solid #ffffff;">
                     </div>
                 """, unsafe_allow_html=True)
             else:
@@ -60,46 +56,70 @@ def main():
         except:
             st.markdown("<div style='text-align: center; font-size: 60px; margin-bottom: 10px;'>👤</div>", unsafe_allow_html=True)
 
-        st.markdown(f"<h3 style='text-align: center; margin-top: 0;'>{nome_completo}</h3>", unsafe_allow_html=True)
-        st.caption(f"<p style='text-align: center;'>Acesso: {nivel}</p>", unsafe_allow_html=True)
+        st.markdown(f"<h3 style='text-align: center; margin-bottom: 0;'>{nome_completo}</h3>", unsafe_allow_html=True)
+        st.caption(f"<p style='text-align: center; margin-top: 0;'>{nivel}</p>", unsafe_allow_html=True)
+
+       # --- CENTRAL DE NOTIFICAÇÕES (SININHO) ---
+        num_notif = buscar_contagem_notificacoes(nome_completo, nivel)
+        
+        if num_notif > 0:
+            # Card visual
+            st.markdown(f"""
+                <div style="background: linear-gradient(145deg, #1e1e1e, #141414); border: 1px solid #ff4b4b; border-radius: 12px; padding: 12px; text-align: center; margin: 15px 0; box-shadow: 0 4px 15px rgba(255, 75, 75, 0.2);">
+                    <span style="font-size: 28px;">🔔</span>
+                    <div style="color: #ff4b4b; font-weight: bold; font-size: 15px; margin-top: 5px;">
+                        {num_notif} Pendência{"s" if num_notif > 1 else ""}
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+            
+            # --- A MÁGICA ACONTECE AQUI ---
+            if st.button("Verificar e Limpar", use_container_width=True, key="quick_notif_btn", type="primary"):
+                # 1. Limpa tudo no banco imediatamente
+                limpar_todas_notificacoes(nome_completo)
+                
+                # 2. Redireciona para a página
+                st.session_state.current_page = "CONTESTACAO"
+                
+                # 3. Recarrega a página (O sino vai sumir pois num_notif será 0)
+                st.rerun()
+        else:
+            st.markdown("<p style='text-align: center; color: #555; font-size: 0.85em; margin-top: 10px;'>✅ Tudo em dia</p>", unsafe_allow_html=True)
+
         st.divider()
 
-        # Contador de Notificações para o Menu
-        num_notif = buscar_contagem_notificacoes(nome_completo, nivel)
-        badge = f" ({num_notif})" if num_notif > 0 else ""
-
-        def menu_button(label, icon, page_name, suffix=""):
-            is_active = st.session_state.current_page == page_name
-            if st.button(
-                f"{icon} {label}{suffix}", 
-                use_container_width=True, 
-                key=f"nav_btn_{page_name}", 
-                type="primary" if is_active else "secondary"
-            ):
-                st.session_state.current_page = page_name
+        # Botões de Navegação
+        def menu_btn(label, icon, target):
+            active = st.session_state.current_page == target
+            if st.button(f"{icon} {label}", use_container_width=True, 
+                         type="primary" if active else "secondary", 
+                         key=f"nav_btn_{target}"):
+                st.session_state.current_page = target
                 st.rerun()
 
-        # Itens Comuns
-        menu_button("DASHBOARD", "📊", "DASHBOARD")
-        label_contestacao = "CENTRAL DE CONTESTAÇÃO" if nivel == "ADMIN" else "CONTESTAR NOTA"
-        menu_button(label_contestacao, "⚖️", "CONTESTACAO", suffix=badge)
-        menu_button("MEU PERFIL", "👤", "PERFIL")
-        menu_button("HISTÓRICO", "📜", "HISTORICO")
+        menu_btn("DASHBOARD", "📊", "DASHBOARD")
+        
+        # Rótulo dinâmico, mas destino fixo na página que trata as contestações
+        label_c = "CENTRAL DE JULGAMENTO" if nivel == "ADMIN" else "CONTESTAR NOTA"
+        menu_btn(label_c, "⚖️", "CONTESTACAO")
+        
+        menu_btn("MEUS RESULTADOS", "📈", "MEUS_RESULTADOS")
+        menu_btn("HISTÓRICO", "📜", "HISTORICO")
+        menu_btn("MEU PERFIL", "👤", "PERFIL")
 
-        # Itens Exclusivos ADMIN
+        # Botões Administrativos (Mantendo todos que você listou)
         if nivel == "ADMIN":
             st.markdown("---")
             st.markdown("### 🛠️ Administrativo")
-            menu_button("NOVA MONITORIA", "📝", "MONITORIA")
-            menu_button("CONFIG. CRITÉRIOS", "⚙️", "CONFIG_CRITERIOS")
-            menu_button("RELATÓRIOS", "📈", "RELATORIOS")
-            menu_button("GESTÃO DE EQUIPE", "🛠️", "GESTAO_USUARIOS")
-            menu_button("CADASTRO USUÁRIO", "👥", "CADASTRO")
-            menu_button("AUDITORIA", "🕵️", "AUDITORIA")
+            menu_btn("NOVA MONITORIA", "📝", "MONITORIA")
+            menu_btn("CONFIG. CRITÉRIOS", "⚙️", "CONFIG_CRITERIOS")
+            menu_btn("RELATÓRIOS", "📈", "RELATORIOS")
+            menu_btn("GESTÃO DE EQUIPE", "👥", "GESTAO_USUARIOS")
+            menu_btn("CADASTRO USUÁRIO", "👥", "CADASTRO")
+            menu_btn("AUDITORIA", "🕵️", "AUDITORIA")
 
         st.divider()
-        if st.button("🚪 Sair", use_container_width=True, key="logout_sidebar_btn"):
-            st.session_state.authenticated = False
+        if st.button("🚪 Sair", use_container_width=True, key="logout_btn"):
             st.session_state.clear()
             st.rerun()
 
@@ -107,62 +127,52 @@ def main():
     page = st.session_state.current_page
 
     try:
-        if page == "DASHBOARD":
+        if page == "DASHBOARD": 
             render_dashboard()
-        
-        elif page == "PERFIL":
-            render_meu_perfil() # Corrigido: Agora chama render_meu_perfil e não a gestão
-        
-        elif page == "CONTESTACAO":
-            if nivel == "ADMIN":
-                render_contestacao()
-            else:
-                render_meus_resultados()
-        
-        elif page == "HISTORICO":
+        elif page == "PERFIL": 
+            render_meu_perfil()
+        elif page == "CONTESTACAO": 
+            # CORREÇÃO CRÍTICA: O SDR também deve ir para render_contestacao para ver os avisos e contestar
+            render_contestacao()
+        elif page == "MEUS_RESULTADOS": 
+            render_meus_resultados()
+        elif page == "HISTORICO": 
             render_historico_geral(nivel, nome_completo)
 
-        # Páginas Administrativas
+        # Páginas Restritas ao ADMIN
         elif nivel == "ADMIN":
-            if page == "RELATORIOS": render_relatorios()
-            elif page == "GESTAO_USUARIOS": render_usuario_gestao()
-            elif page == "MONITORIA": render_nova_monitoria()
+            if page == "MONITORIA": render_nova_monitoria()
             elif page == "CONFIG_CRITERIOS": render_gestao_criterios()
+            elif page == "GESTAO_USUARIOS": render_usuario_gestao()
             elif page == "CADASTRO": render_cadastro()
             elif page == "AUDITORIA": render_auditoria()
+            elif page == "RELATORIOS": render_relatorios()
 
     except Exception as e:
-        st.error(f"Erro ao carregar a página {page}: {str(e)}")
+        st.error(f"Erro ao carregar {page}: {str(e)}")
 
 def render_historico_geral(nivel, nome_completo):
-    """Função para renderizar o histórico de monitorias."""
     st.title("📜 Histórico de Monitorias")
     df = get_all_records_db("monitorias")
     
     if df is not None and not df.empty:
-        df['sdr'] = df['sdr'].astype(str).str.strip()
-        df['nota'] = pd.to_numeric(df['nota'], errors='coerce')
-        df['criado_em'] = pd.to_datetime(df['criado_em'])
+        # Padronização para filtro
+        df['sdr_upper'] = df['sdr'].astype(str).str.strip().str.upper()
         
         if nivel != "ADMIN":
-            df_exibicao = df[df['sdr'].str.upper() == nome_completo.upper()].copy()
+            df_exibicao = df[df['sdr_upper'] == nome_completo.upper()].copy()
         else:
             busca = st.text_input("🔍 Pesquisar por SDR:", placeholder="Digite o nome...")
             df_exibicao = df[df['sdr'].str.contains(busca, case=False)].copy() if busca else df.copy()
 
         if not df_exibicao.empty:
-            df_exibicao = df_exibicao.sort_values(by='criado_em', ascending=False)
-            df_exibicao['📅 Data'] = df_exibicao['criado_em'].dt.strftime('%d/%m/%Y %H:%M')
-            df_final = df_exibicao[['📅 Data', 'sdr', 'nota', 'monitor_responsavel', 'observacoes']]
-            df_final.columns = ['📅 Data', '👤 SDR', '🎯 Nota (%)', '🕵️ Monitor', '📝 Observações']
-
+            df_exibicao['📅 Data'] = pd.to_datetime(df_exibicao['criado_em']).dt.strftime('%d/%m/%Y %H:%M')
             st.dataframe(
-                df_final, 
+                df_exibicao[['📅 Data', 'sdr', 'nota', 'monitor_responsavel', 'observacoes']], 
                 use_container_width=True, 
                 hide_index=True,
                 column_config={
-                    "🎯 Nota (%)": st.column_config.NumberColumn(format="%.1f%%"),
-                    "📝 Observações": st.column_config.TextColumn(width="large")
+                    "nota": st.column_config.NumberColumn("Nota", format="%.1f%%"),
                 }
             )
         else:

@@ -5,75 +5,26 @@ import plotly.graph_objects as go
 from database import get_all_records_db, supabase
 from datetime import datetime, timedelta
 
-def marcar_como_lida(tabela, item_id):
-    """Atualiza o banco para que a notificação não apareça mais"""
-    try:
-        supabase.table(tabela).update({"visualizada": True}).eq("id", item_id).execute()
-        st.rerun()
-    except Exception as e:
-        st.error(f"Erro ao limpar notificação: {e}")
-
-def render_notificacoes(nome_usuario, nivel):
-    """Exibe avisos de novas notas ou respostas de contestação"""
-    try:
-        tem_notificacao = False
-        
-        if nivel == "SDR":
-            # 1. Novas Monitorias não lidas
-            res_mon = supabase.table("monitorias").select("*")\
-                .eq("sdr", nome_usuario).eq("visualizada", False).execute()
-            
-            # 2. Respostas de Contestações não lidas
-            res_cont = supabase.table("contestacoes").select("*")\
-                .eq("sdr_nome", nome_usuario).neq("status", "Pendente").eq("visualizada", False).execute()
-
-            if res_mon.data or res_cont.data:
-                st.markdown("### 🔔 Central de Avisos")
-                tem_notificacao = True
-
-                for mon in res_mon.data:
-                    with st.container(border=True):
-                        c1, c2 = st.columns([5, 1])
-                        c1.info(f"✨ **Nova Nota lançada:** {mon['nota']}% (Monitoria de {mon['criado_em'][:10]})")
-                        if c2.button("ok", key=f"mon_{mon['id']}", help="Marcar como lida"):
-                            marcar_como_lida("monitorias", mon['id'])
-
-                for cont in res_cont.data:
-                    with st.container(border=True):
-                        c1, c2 = st.columns([5, 1])
-                        if cont['status'] == "Deferido":
-                            c1.success(f"✅ **Revisão Aceita!** Sua nota foi corrigida.")
-                        else:
-                            c1.error(f"❌ **Revisão Indeferida.** Veja o parecer do Admin.")
-                        
-                        if c2.button("ok", key=f"cont_{cont['id']}", help="Marcar como lida"):
-                            marcar_como_lida("contestacoes", cont['id'])
-
-        if tem_notificacao:
-            st.divider()
-
-    except Exception:
-        pass
+# REMOVIDA: A função render_notificacoes foi removida daqui para centralizar no app.py/contestacao.py
+# REMOVIDA: A função marcar_como_lida foi removida daqui para evitar duplicidade de lógica
 
 def render_dashboard():
     nivel_usuario = str(st.session_state.get('nivel', 'SDR')).upper()
     nome_completo_logado = st.session_state.get('user_nome', 'Usuário')
 
-    # 1. Notificações (Apenas para SDR)
-    render_notificacoes(nome_completo_logado, nivel_usuario)
-
-    # 2. Busca de Dados
+    # 1. Busca de Dados
     df = get_all_records_db("monitorias")
     
     if df is None or df.empty:
         st.info("💡 Nenhuma monitoria encontrada no banco de dados.")
         return
 
-    # 3. Tratamento de Dados
+    # 2. Tratamento de Dados
     df['nota'] = pd.to_numeric(df['nota'], errors='coerce')
     df['criado_em'] = pd.to_datetime(df['criado_em'])
     df = df.sort_values(by='criado_em')
 
+    # Título principal agora sem avisos em cima
     st.title("📊 Dashboard de Performance")
 
     # --- 1. SEÇÃO DE FILTROS ---
@@ -84,7 +35,7 @@ def render_dashboard():
             lista_sdrs = sorted(df['sdr'].unique().tolist())
             sdr_escolhido = c1.selectbox("Filtrar por SDR:", ["Ver Todos"] + lista_sdrs)
         else:
-            st.info(f"Visualizando resultados de: **{nome_completo_logado}**")
+            st.markdown(f"Visualizando resultados de: **{nome_completo_logado}**")
             sdr_escolhido = nome_completo_logado
 
         hoje = datetime.now().date()
@@ -114,7 +65,7 @@ def render_dashboard():
         st.warning(f"⚠️ Sem dados para este período.")
         return
 
-    # --- 2. RANKING TOP 3 (Sempre visível no Dashboard Geral) ---
+    # --- 2. RANKING TOP 3 (Apenas Admin vendo "Ver Todos") ---
     if nivel_usuario == "ADMIN" and sdr_escolhido == "Ver Todos":
         st.markdown("### 🏆 Elite da Qualidade (Top 3)")
         ranking = df_filtrado.groupby('sdr')['nota'].mean().sort_values(ascending=False).reset_index()
@@ -124,14 +75,16 @@ def render_dashboard():
         cores = ["#FFD700", "#C0C0C0", "#CD7F32"]
 
         for i, row in ranking.head(3).iterrows():
-            # Busca foto do SDR
-            res_user = supabase.table("usuarios").select("foto_url").eq("nome", row['sdr']).single().execute()
-            foto_sdr = res_user.data.get('foto_url') if res_user.data else None
+            try:
+                res_user = supabase.table("usuarios").select("foto_url").eq("nome", row['sdr']).single().execute()
+                foto_sdr = res_user.data.get('foto_url') if res_user.data else None
+            except:
+                foto_sdr = None
             
             with col_rank[i]:
                 foto_html = f'<img src="{foto_sdr}" style="width: 70px; height: 70px; border-radius: 50%; object-fit: cover; border: 3px solid {cores[i]};">' if foto_sdr else '<div style="font-size: 40px;">👤</div>'
                 st.markdown(f"""
-                    <div style="background-color: {cores[i]}15; padding: 15px; border-radius: 15px; border: 2px solid {cores[i]}; text-align: center; min-height: 200px;">
+                    <div style="background-color: {cores[i]}15; padding: 15px; border-radius: 15px; border: 2px solid {cores[i]}; text-align: center;">
                         {foto_html}<br>
                         <span style="font-size: 25px;">{medalhas[i]}</span><br>
                         <b>{row['sdr']}</b><br>
@@ -163,7 +116,7 @@ def render_dashboard():
             'threshold': {'line': {'color': "black", 'width': 4}, 'value': 90}
         }
     ))
-    fig_gauge.update_layout(height=250, margin=dict(l=30, r=30, t=40, b=20))
+    fig_gauge.update_layout(height=250, margin=dict(l=30, r=30, t=40, b=20), paper_bgcolor='rgba(0,0,0,0)', font={'color': "white"})
     st.plotly_chart(fig_gauge, use_container_width=True)
 
     # --- 5. GRÁFICO DE EVOLUÇÃO ---
@@ -174,6 +127,7 @@ def render_dashboard():
         color_discrete_sequence=['#1f77b4']
     )
     fig_evolucao.update_yaxes(range=[0, 105])
+    fig_evolucao.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font={'color': "white"})
     st.plotly_chart(fig_evolucao, use_container_width=True)
 
     # --- 6. TABELA DETALHADA ---

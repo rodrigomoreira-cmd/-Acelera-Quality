@@ -3,9 +3,11 @@ from database import supabase
 from recuperacao import render_recuperacao
 
 def render_login():
+    # Inicializa o estado de autenticação se não existir
     if "auth_mode" not in st.session_state:
         st.session_state.auth_mode = "login"
 
+    # Lógica de Recuperação de Senha
     if st.session_state.auth_mode == "recuperar":
         if st.button("⬅️ Voltar para Login", key="back_to_login"):
             st.session_state.auth_mode = "login"
@@ -13,34 +15,65 @@ def render_login():
         render_recuperacao()
         return
 
-    st.title("🚀 Acelera Quality")
-    
-    with st.container():
-        user_input = st.text_input("Usuário", key="login_user")
-        password = st.text_input("Senha", type="password", key="login_pass")
-        
-        col_btn1, col_btn2 = st.columns(2)
-        
-        with col_btn1:
-            if st.button("Entrar", use_container_width=True, type="primary"):
-                if user_input and password:
-                    login_busca = user_input.strip().lower()
-                    res = supabase.table("usuarios").select("*").eq("user", login_busca).eq("senha", password).execute()
-                    
-                    if res.data:
-                        dados = res.data[0]
-                        st.session_state.authenticated = True
-                        st.session_state.user_login = dados['user'] 
-                        st.session_state.user_nome = dados.get('nome', 'Usuário sem Nome')
-                        st.session_state.nivel = str(dados.get('nivel', 'SDR')).upper()
-                        st.session_state.current_page = "DASHBOARD"
-                        st.rerun()
-                    else:
-                        st.error("❌ Usuário ou senha incorretos.")
-                else:
-                    st.warning("⚠️ Preencha todos os campos.")
+    # --- ESTILO DARK (BLACK MODE) ---
+    st.markdown("""
+        <style>
+            [data-testid="stSidebar"], [data-testid="stHeader"] {display: none;}
+            .stApp { background-color: #000000 !important; }
+            h1, h2, h3, p, label { color: #ffffff !important; }
+            [data-testid="stVerticalBlockBorderWrapper"] {
+                background-color: #111111 !important;
+                border: 1px solid #333333 !important;
+                border-radius: 15px !important;
+                padding: 20px !important;
+            }
+            input {
+                background-color: #222222 !important;
+                color: #ffffff !important;
+                border: 1px solid #444444 !important;
+            }
+        </style>
+    """, unsafe_allow_html=True)
 
-        with col_btn2:
-            if st.button("Esqueci minha senha", use_container_width=True):
-                st.session_state.auth_mode = "recuperar"
-                st.rerun()
+    _, col_central, _ = st.columns([1, 2, 1])
+
+    with col_central:
+        st.write("")
+        st.write("")
+        st.markdown("<h1 style='text-align: center;'>🚀 Acelera Quality</h1>", unsafe_allow_html=True)
+        
+        with st.container(border=True):
+            st.subheader("Login")
+            user_input = st.text_input("Usuário (E-mail)", key="login_user").strip().lower()
+            password = st.text_input("Senha", type="password", key="login_pass")
+            
+            st.write("")
+            col_btn1, col_btn2 = st.columns(2)
+            
+            with col_btn1:
+                if st.button("Entrar", use_container_width=True, type="primary"):
+                    if user_input and password:
+                        # Busca o usuário no banco
+                        res = supabase.table("usuarios").select("*").eq("user", user_input).eq("senha", password).execute()
+                        
+                        if res.data:
+                            dados = res.data[0]
+                            # --- CRÍTICO: SALVANDO DADOS DA SESSÃO ---
+                            st.session_state.authenticated = True
+                            st.session_state.user_login = dados['user'] 
+                            # Pegamos o nome exato do banco para as buscas em 'sdr_nome' funcionarem
+                            st.session_state.user_nome = dados.get('nome', user_input)
+                            st.session_state.nivel = str(dados.get('nivel', 'SDR')).upper()
+                            st.session_state.current_page = "DASHBOARD"
+                            st.rerun()
+                        else:
+                            st.error("❌ Usuário ou senha incorretos.")
+                    else:
+                        st.warning("⚠️ Preencha todos os campos.")
+
+            with col_btn2:
+                if st.button("Recuperar Senha", use_container_width=True):
+                    st.session_state.auth_mode = "recuperar"
+                    st.rerun()
+
+        st.markdown("<p style='text-align: center; color: #555;'>v2.0 - Grupo Acelerador</p>", unsafe_allow_html=True)
