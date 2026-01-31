@@ -12,7 +12,7 @@ from auditoria import render_auditoria
 from relatorios import render_relatorios 
 from gestao_criterios import render_gestao_criterios 
 from style import apply_custom_styles
-from database import get_all_records_db, supabase, buscar_contagem_notificacoes, limpar_todas_notificacoes
+from database import get_all_records_db, supabase, buscar_contagem_notificacoes, limpar_todas_notificacoes  
 
 def main():
     # 1. Configuração inicial da página (Design Black)
