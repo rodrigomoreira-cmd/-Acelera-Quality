@@ -22,16 +22,12 @@ from database import get_all_records_db, supabase, buscar_contagem_notificacoes,
 
 # --- FUNÇÃO AUXILIAR DE HISTÓRICO ---
 def render_historico_geral(nivel, nome_completo):
-    # Removido emoji do título
     st.title("Histórico de Monitorias")
-    
-    # Busca dados no banco
     df = get_all_records_db("monitorias")
     
     if df is not None and not df.empty:
         df['sdr_upper'] = df['sdr'].astype(str).str.strip().str.upper()
         
-        # LOGICA: SDR vê só o dele. ADMIN e GESTAO veem filtro de busca.
         if nivel not in ["ADMIN", "GESTAO"]:
             df_exibicao = df[df['sdr_upper'] == nome_completo.upper()].copy()
         else:
@@ -40,32 +36,19 @@ def render_historico_geral(nivel, nome_completo):
             df_exibicao = df[df['sdr'].str.contains(busca, case=False)].copy() if busca else df.copy()
 
         if not df_exibicao.empty:
-            # --- LÓGICA PARA EXTRAIR NC e NCG ---
             def extrair_falhas(detalhes):
-                if not detalhes or not isinstance(detalhes, dict):
-                    return "Nenhuma"
+                if not detalhes or not isinstance(detalhes, dict): return "Nenhuma"
                 falhas = [f"{k} ({v})" for k, v in detalhes.items() if v in ["NC", "NCG"]]
                 return ", ".join(falhas) if falhas else "Tudo Conforme"
 
-            # Criamos a nova coluna baseada no JSON de detalhes
             df_exibicao['Itens NC/NCG'] = df_exibicao['detalhes'].apply(extrair_falhas)
-
-            # Tratamento de Data
             if 'criado_em' in df_exibicao.columns:
                 df_exibicao['Data'] = pd.to_datetime(df_exibicao['criado_em']).dt.strftime('%d/%m/%Y %H:%M')
             else:
                 df_exibicao['Data'] = "N/A"
 
-            # Exibição da Tabela
             st.dataframe(
-                df_exibicao[[
-                    'Data', 
-                    'sdr', 
-                    'nota', 
-                    'Itens NC/NCG', 
-                    'monitor_responsavel', 
-                    'observacoes'
-                ]], 
+                df_exibicao[['Data', 'sdr', 'nota', 'Itens NC/NCG', 'monitor_responsavel', 'observacoes']], 
                 use_container_width=True, 
                 hide_index=True
             )
@@ -78,7 +61,7 @@ def render_historico_geral(nivel, nome_completo):
 def main():
     st.set_page_config(layout="wide", page_title="Acelera Quality", page_icon="🚀")
     
-    # CSS para garantir que a sidebar apareça
+    # CSS para garantir visibilidade da sidebar
     st.markdown("""
         <style>
             section[data-testid="stSidebar"] {
@@ -88,20 +71,21 @@ def main():
         </style>
     """, unsafe_allow_html=True)
 
-    # 1. Inicialização do CookieManager com chave fixa para estabilidade
+    # 1. Inicialização do CookieManager com chave fixa
     cookie_manager = stx.CookieManager(key="cookie_handler_main")
 
+    # Inicialização de estados
     if "authenticated" not in st.session_state: st.session_state.authenticated = False
     if "logout_clicked" not in st.session_state: st.session_state.logout_clicked = False 
     if "current_page" not in st.session_state: st.session_state.current_page = "DASHBOARD"
 
-    # 🔄 LÓGICA DE AUTO-LOGIN (CORRIGIDA)
-    # Só tenta logar se o usuário NÃO acabou de clicar em sair
+    # 🔄 LÓGICA DE AUTO-LOGIN (PERSISTÊNCIA F5)
     if not st.session_state.authenticated and not st.session_state.logout_clicked:
-        time.sleep(0.1) # Pequena pausa para leitura correta do cookie
+        # Pequeno delay técnico para o componente ler o browser
+        time.sleep(0.2) 
         cookie_user = cookie_manager.get('user_token')
         
-        # CORREÇÃO: Verifica se o cookie existe E se não é uma string vazia (que indica logout)
+        # Só valida se o cookie for real e não for string vazia de logout
         if cookie_user and str(cookie_user).strip() != "":
             try:
                 res = supabase.table("usuarios").select("*").eq("user", cookie_user).single().execute()
@@ -114,7 +98,6 @@ def main():
                     st.session_state.foto_url = user_data.get('foto_url')
                     st.rerun() 
                 else:
-                    # Se o usuário não existe mais ou está inativo, limpa o cookie
                     cookie_manager.delete('user_token')
             except Exception:
                 pass
@@ -124,15 +107,20 @@ def main():
         render_login(cookie_manager)
         st.stop()
 
-    # ⏳ RENOVAÇÃO DO TEMPO (KEEP-ALIVE)
+    # ⏳ KEEP-ALIVE E INATIVIDADE (10 MINUTOS)
+    # Sempre que o app é interagido, o cookie é renovado para mais 10 min
     if st.session_state.authenticated and not st.session_state.logout_clicked:
-        new_expiry = datetime.now() + timedelta(minutes=60)
-        cookie_manager.set('user_token', st.session_state.user_login, expires_at=new_expiry, key="renew_cookie")
+        new_expiry = datetime.now() + timedelta(minutes=10)
+        cookie_manager.set(
+            'user_token', 
+            st.session_state.user_login, 
+            expires_at=new_expiry, 
+            key="renew_cookie"
+        )
 
     apply_custom_styles()
     nivel = st.session_state.nivel
     nome_completo = st.session_state.user_nome
-    user_login = st.session_state.user_login
 
     # --- SIDEBAR ---
     with st.sidebar:
@@ -156,27 +144,23 @@ def main():
         
         st.divider()
 
-        # Função de Botão Simples
         def menu_btn(label, target):
             is_active = st.session_state.current_page == target
             if st.button(label, use_container_width=True, type="primary" if is_active else "secondary", key=f"nav_{target}"):
                 st.session_state.current_page = target
                 st.rerun()
 
-        # --- MENU DE NAVEGAÇÃO ---
+        # --- MENU ---
         menu_btn("DASHBOARD", "DASHBOARD")
         
-        # MENU SDR
         if nivel == "SDR":
             menu_btn("CONTESTAR NOTA", "CONTESTACAO")
             menu_btn("MEUS RESULTADOS", "MEUS_RESULTADOS")
             menu_btn("HISTÓRICO", "HISTORICO")
 
-        # MENU ADMIN
         if nivel == "ADMIN":
             menu_btn("CONTESTAÇÕES", "CONTESTACAO")
 
-        # MENU GESTAO (COM O BOTÃO ADICIONADO)
         if nivel == "GESTAO":
             menu_btn("HISTÓRICO GERAL", "HISTORICO")
             menu_btn("RELATÓRIOS", "RELATORIOS")
@@ -184,7 +168,6 @@ def main():
 
         menu_btn("MEU PERFIL", "PERFIL")
 
-        # ADMIN TOOLS
         if nivel == "ADMIN":
             st.markdown("---")
             st.markdown("### Administrativo")
@@ -198,54 +181,37 @@ def main():
         st.divider()
         
         # -----------------------------------------------------------
-        # CORREÇÃO DEFINITIVA DO LOGOUT
+        # LOGOUT "NUCLEAR" (Limpa cookies e sessão instantaneamente)
         # -----------------------------------------------------------
         if st.button("Sair", use_container_width=True, key="logout_btn"):
-            # 1. Bloqueia a sessão imediatamente
+            # 1. Marca logout no estado da sessão
             st.session_state.logout_clicked = True
             st.session_state.authenticated = False
             
-            # 2. SOBRESCREVE o cookie com valor vazio e data no passado (Nuclear)
-            # Isso força o navegador a invalidar o token na hora.
+            # 2. Força a expiração do cookie (sobrescreve com data antiga)
             cookie_manager.set('user_token', "", expires_at=datetime.now() - timedelta(days=1))
             
-            # 3. Pequena pausa para garantir que o navegador processou a ordem
+            # 3. Pequeno tempo para garantir a escrita no browser antes do reload
             time.sleep(0.5)
             
-            # 4. Recarrega a página (agora sem cookie válido)
+            # 4. Limpa tudo e recarrega
             st.rerun()
 
     # --- ROTEAMENTO ---
     page = st.session_state.current_page
     try:
-        # Páginas Comuns
         if page == "DASHBOARD": render_dashboard()
         elif page == "PERFIL": render_meu_perfil()
-        
-        # Páginas SDR
-        elif page == "CONTESTACAO" and nivel == "SDR": render_contestacao()
+        elif page == "CONTESTACAO": render_contestacao()
         elif page == "MEUS_RESULTADOS" and nivel == "SDR": render_meus_resultados()
-        elif page == "HISTORICO" and nivel == "SDR": render_historico_geral(nivel, nome_completo)
-        
-        # Páginas ADMIN
-        elif page == "CONTESTACAO" and nivel == "ADMIN": render_contestacao()
-        
-        # Páginas GESTAO (e compartilhadas)
-        elif page == "HISTORICO" and nivel in ["ADMIN", "GESTAO"]: render_historico_geral(nivel, nome_completo)
-        elif page == "RELATORIOS" and nivel == "GESTAO": render_relatorios()
-        elif page == "CADASTRO" and nivel == "GESTAO": render_cadastro()
-        
-        # Páginas Exclusivas ADMIN
-        elif nivel == "ADMIN":
-            if page == "MONITORIA": render_nova_monitoria()
-            elif page == "CONFIG_CRITERIOS": render_gestao_criterios()
-            elif page == "GESTAO_USUARIOS": render_usuario_gestao()
-            elif page == "CADASTRO": render_cadastro()
-            elif page == "AUDITORIA": render_auditoria()
-            elif page == "RELATORIOS": render_relatorios()
-        else:
-            render_dashboard()
-
+        elif page == "HISTORICO": render_historico_geral(nivel, nome_completo)
+        elif page == "RELATORIOS": render_relatorios()
+        elif page == "CADASTRO": render_cadastro()
+        elif page == "MONITORIA": render_nova_monitoria()
+        elif page == "GESTAO_USUARIOS": render_usuario_gestao()
+        elif page == "CONFIG_CRITERIOS": render_gestao_criterios()
+        elif page == "AUDITORIA": render_auditoria()
+        else: render_dashboard()
     except Exception as e:
         st.error(f"Erro ao carregar {page}: {str(e)}")
 
