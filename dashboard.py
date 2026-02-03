@@ -5,9 +5,6 @@ import plotly.graph_objects as go
 from database import get_all_records_db, supabase
 from datetime import datetime, timedelta
 
-# REMOVIDA: A função render_notificacoes foi removida daqui para centralizar no app.py/contestacao.py
-# REMOVIDA: A função marcar_como_lida foi removida daqui para evitar duplicidade de lógica
-
 def render_dashboard():
     nivel_usuario = str(st.session_state.get('nivel', 'SDR')).upper()
     nome_completo_logado = st.session_state.get('user_nome', 'Usuário')
@@ -24,14 +21,15 @@ def render_dashboard():
     df['criado_em'] = pd.to_datetime(df['criado_em'])
     df = df.sort_values(by='criado_em')
 
-    # Título principal agora sem avisos em cima
+    # Título principal
     st.title("📊 Dashboard de Performance")
 
     # --- 1. SEÇÃO DE FILTROS ---
     with st.container(border=True):
         c1, c2 = st.columns([1, 1.5])
         
-        if nivel_usuario == "ADMIN":
+        # ALTERAÇÃO AQUI: GESTAO e ADMIN podem filtrar SDRs
+        if nivel_usuario in ["ADMIN", "GESTAO"]:
             lista_sdrs = sorted(df['sdr'].unique().tolist())
             sdr_escolhido = c1.selectbox("Filtrar por SDR:", ["Ver Todos"] + lista_sdrs)
         else:
@@ -50,6 +48,8 @@ def render_dashboard():
 
     # Aplicação dos Filtros
     df_filtrado = df.copy()
+    
+    # Se for SDR, trava nele mesmo. Se for Admin/Gestão, respeita o selectbox.
     if nivel_usuario == "SDR":
         df_filtrado = df_filtrado[df_filtrado['sdr'] == nome_completo_logado]
     elif sdr_escolhido != "Ver Todos":
@@ -65,8 +65,8 @@ def render_dashboard():
         st.warning(f"⚠️ Sem dados para este período.")
         return
 
-    # --- 2. RANKING TOP 3 (Apenas Admin vendo "Ver Todos") ---
-    if nivel_usuario == "ADMIN" and sdr_escolhido == "Ver Todos":
+    # --- 2. RANKING TOP 3 (Admin e Gestão veem o ranking geral) ---
+    if nivel_usuario in ["ADMIN", "GESTAO"] and sdr_escolhido == "Ver Todos":
         st.markdown("### 🏆 Elite da Qualidade (Top 3)")
         ranking = df_filtrado.groupby('sdr')['nota'].mean().sort_values(ascending=False).reset_index()
         
@@ -101,6 +101,7 @@ def render_dashboard():
     m3.metric("Meta", "90%", delta=f"{media_nota - 90:.1f}%" if media_nota else None)
 
     # --- 4. VELOCÍMETRO ---
+    st.write("##")
     fig_gauge = go.Figure(go.Indicator(
         mode = "gauge+number",
         value = media_nota,
@@ -120,6 +121,7 @@ def render_dashboard():
     st.plotly_chart(fig_gauge, use_container_width=True)
 
     # --- 5. GRÁFICO DE EVOLUÇÃO ---
+    st.write("##")
     fig_evolucao = px.area(
         df_filtrado, x='criado_em', y='nota', 
         markers=True, title="Evolução das Notas",
@@ -129,9 +131,3 @@ def render_dashboard():
     fig_evolucao.update_yaxes(range=[0, 105])
     fig_evolucao.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font={'color': "white"})
     st.plotly_chart(fig_evolucao, use_container_width=True)
-
-    # --- 6. TABELA DETALHADA ---
-    with st.expander("📋 Ver Histórico Detalhado"):
-        df_exibicao = df_filtrado[['criado_em', 'sdr', 'nota', 'monitor_responsavel', 'observacoes']].copy()
-        df_exibicao['criado_em'] = df_exibicao['criado_em'].dt.strftime('%d/%m/%Y %H:%M')
-        st.dataframe(df_exibicao.sort_values(by='criado_em', ascending=False), use_container_width=True, hide_index=True)

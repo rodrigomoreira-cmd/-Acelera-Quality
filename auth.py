@@ -2,22 +2,21 @@ import streamlit as st
 import time
 from datetime import datetime, timedelta
 from database import supabase
-from recuperacao import render_recuperacao
+from recuperacao import render_recuperacao # Certifique-se que este arquivo existe
 
 def render_login(cookie_manager=None):
-    # Inicializa o estado de autenticação se não existir
     if "auth_mode" not in st.session_state:
         st.session_state.auth_mode = "login"
 
-    # Lógica de Recuperação
+    # Lógica de Recuperação de Senha
     if st.session_state.auth_mode == "recuperar":
-        if st.button("⬅️ Voltar para Login", key="back_to_login"):
+        if st.button("⬅️ Voltar para Login"):
             st.session_state.auth_mode = "login"
             st.rerun()
         render_recuperacao()
         return
 
-    # --- ESTILO DARK ---
+    # Estilo Dark Mode para a tela de Login
     st.markdown("""
         <style>
             [data-testid="stSidebar"], [data-testid="stHeader"] {display: none;}
@@ -27,16 +26,16 @@ def render_login(cookie_manager=None):
                 background-color: #111111 !important;
                 border: 1px solid #333333 !important;
                 border-radius: 15px !important;
-                padding: 20px !important;
+                padding: 30px !important;
             }
             input { background-color: #222222 !important; color: #ffffff !important; border: 1px solid #444444 !important; }
         </style>
     """, unsafe_allow_html=True)
 
-    _, col_central, _ = st.columns([1, 2, 1])
+    _, col_central, _ = st.columns([1, 1.8, 1])
 
     with col_central:
-        st.write("")
+        st.write("##")
         st.markdown("<h1 style='text-align: center;'>🚀 Acelera Quality</h1>", unsafe_allow_html=True)
         
         with st.container(border=True):
@@ -44,7 +43,7 @@ def render_login(cookie_manager=None):
             user_input = st.text_input("Usuário (E-mail)", key="login_user").strip().lower()
             password = st.text_input("Senha", type="password", key="login_pass")
             
-            st.write("")
+            st.write("#")
             col_btn1, col_btn2 = st.columns(2)
             
             with col_btn1:
@@ -55,22 +54,26 @@ def render_login(cookie_manager=None):
                             
                             if res.data:
                                 dados = res.data[0]
-                                
-                                # --- 1. SALVAR COOKIE (COM 10 MINUTOS) ---
+                                if not dados.get('esta_ativo', True):
+                                    st.error("Conta desativada. Fale com o Admin.")
+                                    return
+
+                                # Grava o Cookie inicial
                                 if cookie_manager:
-                                    # Validade curta: 10 minutos
                                     expires = datetime.now() + timedelta(minutes=10)
                                     cookie_manager.set('user_token', dados['user'], expires_at=expires)
                                 
-                                # --- 2. SALVAR SESSÃO ---
+                                # Define Sessão
                                 st.session_state.authenticated = True
                                 st.session_state.user_login = dados['user'] 
                                 st.session_state.user_nome = dados.get('nome', user_input)
                                 st.session_state.nivel = str(dados.get('nivel', 'SDR')).upper()
+                                st.session_state.foto_url = dados.get('foto_url')
                                 st.session_state.current_page = "DASHBOARD"
+                                st.session_state.logout_clicked = False
                                 
-                                st.success("Login realizado!")
-                                time.sleep(1)
+                                st.success("Login realizado! Redirecionando...")
+                                time.sleep(0.5)
                                 st.rerun()
                             else:
                                 st.error("❌ Usuário ou senha incorretos.")
@@ -84,4 +87,4 @@ def render_login(cookie_manager=None):
                     st.session_state.auth_mode = "recuperar"
                     st.rerun()
 
-        st.markdown("<p style='text-align: center; color: #555;'>v2.2 - Logout Automático (10min)</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #555; margin-top:20px;'>Acelera Quality v2.2 | Logout Automático (10min)</p>", unsafe_allow_html=True)
