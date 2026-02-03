@@ -22,13 +22,16 @@ from database import get_all_records_db, supabase, buscar_contagem_notificacoes,
 
 # --- FUNÇÃO AUXILIAR DE HISTÓRICO ---
 def render_historico_geral(nivel, nome_completo):
+    # Removido emoji do título
     st.title("Histórico de Monitorias")
     
+    # Busca dados no banco
     df = get_all_records_db("monitorias")
     
     if df is not None and not df.empty:
         df['sdr_upper'] = df['sdr'].astype(str).str.strip().str.upper()
         
+        # LOGICA: SDR vê só o dele. ADMIN e GESTAO veem filtro de busca.
         if nivel not in ["ADMIN", "GESTAO"]:
             df_exibicao = df[df['sdr_upper'] == nome_completo.upper()].copy()
         else:
@@ -37,20 +40,32 @@ def render_historico_geral(nivel, nome_completo):
             df_exibicao = df[df['sdr'].str.contains(busca, case=False)].copy() if busca else df.copy()
 
         if not df_exibicao.empty:
+            # --- LÓGICA PARA EXTRAIR NC e NCG ---
             def extrair_falhas(detalhes):
-                if not detalhes or not isinstance(detalhes, dict): return "Nenhuma"
+                if not detalhes or not isinstance(detalhes, dict):
+                    return "Nenhuma"
                 falhas = [f"{k} ({v})" for k, v in detalhes.items() if v in ["NC", "NCG"]]
                 return ", ".join(falhas) if falhas else "Tudo Conforme"
 
+            # Criamos a nova coluna baseada no JSON de detalhes
             df_exibicao['Itens NC/NCG'] = df_exibicao['detalhes'].apply(extrair_falhas)
-            
+
+            # Tratamento de Data
             if 'criado_em' in df_exibicao.columns:
                 df_exibicao['Data'] = pd.to_datetime(df_exibicao['criado_em']).dt.strftime('%d/%m/%Y %H:%M')
             else:
                 df_exibicao['Data'] = "N/A"
 
+            # Exibição da Tabela
             st.dataframe(
-                df_exibicao[['Data', 'sdr', 'nota', 'Itens NC/NCG', 'monitor_responsavel', 'observacoes']], 
+                df_exibicao[[
+                    'Data', 
+                    'sdr', 
+                    'nota', 
+                    'Itens NC/NCG', 
+                    'monitor_responsavel', 
+                    'observacoes'
+                ]], 
                 use_container_width=True, 
                 hide_index=True
             )
@@ -80,13 +95,14 @@ def main():
     if "logout_clicked" not in st.session_state: st.session_state.logout_clicked = False 
     if "current_page" not in st.session_state: st.session_state.current_page = "DASHBOARD"
 
-    # 🔄 LÓGICA DE AUTO-LOGIN
-    # Só tenta logar se o usuário NÃO acabou de clicar em sair
-    if not st.session_state.authenticated and not st.session_state.logout_clicked:
+    # 🔄 LÓGICA DE AUTO-LOGIN CORRIGIDA
+    # Só tenta logar se o usuário NÃO estiver autenticado
+    if not st.session_state.authenticated:
         time.sleep(0.1) # Pequena pausa para leitura correta do cookie
         cookie_user = cookie_manager.get('user_token')
         
-        if cookie_user:
+        # CORREÇÃO: Verifica se o cookie existe E se não é vazio/inválido
+        if cookie_user and str(cookie_user).strip() != "":
             try:
                 res = supabase.table("usuarios").select("*").eq("user", cookie_user).single().execute()
                 if res.data and res.data.get('esta_ativo', True):
@@ -109,7 +125,8 @@ def main():
         st.stop()
 
     # ⏳ RENOVAÇÃO DO TEMPO (KEEP-ALIVE)
-    if st.session_state.authenticated and not st.session_state.logout_clicked:
+    # Se chegou aqui, está logado. Renovamos o token.
+    if st.session_state.authenticated:
         new_expiry = datetime.now() + timedelta(minutes=60)
         cookie_manager.set('user_token', st.session_state.user_login, expires_at=new_expiry, key="renew_cookie")
 
@@ -177,21 +194,22 @@ def main():
 
         st.divider()
         
-        # 2. LOGOUT BLINDADO
+        # --------------------------------------------------------------------
+        # 2. LOGOUT BLINDADO (CORREÇÃO DO F5)
+        # --------------------------------------------------------------------
         if st.button("Sair", use_container_width=True, key="logout_btn"):
-            # a) Bloqueia o auto-login imediato
+            # a) Trava a sessão
             st.session_state.logout_clicked = True
-            
-            # b) Ordena a exclusão do cookie
-            cookie_manager.delete('user_token')
-            
-            # c) Limpa a sessão
             st.session_state.authenticated = False
             
-            # d) PAUSA ESTRATÉGICA: Dá 0.5s para o navegador apagar o cookie de verdade
+            # b) Sobrescreve o cookie com valor vazio e expirado (NUCLEAR)
+            # Isso é mais forte que o delete e funciona instantaneamente
+            cookie_manager.set('user_token', "", expires_at=datetime.now() - timedelta(days=1))
+            
+            # c) Pausa estratégica para o navegador processar
             time.sleep(0.5)
             
-            # e) Recarrega a página (agora sem cookie)
+            # d) Recarrega
             st.rerun()
 
     # --- ROTEAMENTO ---
