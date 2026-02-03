@@ -1,13 +1,15 @@
 import streamlit as st
+import time
+from datetime import datetime, timedelta
 from database import supabase
 from recuperacao import render_recuperacao
 
-def render_login():
+def render_login(cookie_manager=None):
     # Inicializa o estado de autenticação se não existir
     if "auth_mode" not in st.session_state:
         st.session_state.auth_mode = "login"
 
-    # Lógica de Recuperação de Senha
+    # Lógica de Recuperação
     if st.session_state.auth_mode == "recuperar":
         if st.button("⬅️ Voltar para Login", key="back_to_login"):
             st.session_state.auth_mode = "login"
@@ -15,7 +17,7 @@ def render_login():
         render_recuperacao()
         return
 
-    # --- ESTILO DARK (BLACK MODE) ---
+    # --- ESTILO DARK ---
     st.markdown("""
         <style>
             [data-testid="stSidebar"], [data-testid="stHeader"] {display: none;}
@@ -27,18 +29,13 @@ def render_login():
                 border-radius: 15px !important;
                 padding: 20px !important;
             }
-            input {
-                background-color: #222222 !important;
-                color: #ffffff !important;
-                border: 1px solid #444444 !important;
-            }
+            input { background-color: #222222 !important; color: #ffffff !important; border: 1px solid #444444 !important; }
         </style>
     """, unsafe_allow_html=True)
 
     _, col_central, _ = st.columns([1, 2, 1])
 
     with col_central:
-        st.write("")
         st.write("")
         st.markdown("<h1 style='text-align: center;'>🚀 Acelera Quality</h1>", unsafe_allow_html=True)
         
@@ -53,21 +50,32 @@ def render_login():
             with col_btn1:
                 if st.button("Entrar", use_container_width=True, type="primary"):
                     if user_input and password:
-                        # Busca o usuário no banco
-                        res = supabase.table("usuarios").select("*").eq("user", user_input).eq("senha", password).execute()
-                        
-                        if res.data:
-                            dados = res.data[0]
-                            # --- CRÍTICO: SALVANDO DADOS DA SESSÃO ---
-                            st.session_state.authenticated = True
-                            st.session_state.user_login = dados['user'] 
-                            # Pegamos o nome exato do banco para as buscas em 'sdr_nome' funcionarem
-                            st.session_state.user_nome = dados.get('nome', user_input)
-                            st.session_state.nivel = str(dados.get('nivel', 'SDR')).upper()
-                            st.session_state.current_page = "DASHBOARD"
-                            st.rerun()
-                        else:
-                            st.error("❌ Usuário ou senha incorretos.")
+                        try:
+                            res = supabase.table("usuarios").select("*").eq("user", user_input).eq("senha", password).execute()
+                            
+                            if res.data:
+                                dados = res.data[0]
+                                
+                                # --- 1. SALVAR COOKIE (COM 10 MINUTOS) ---
+                                if cookie_manager:
+                                    # Validade curta: 10 minutos
+                                    expires = datetime.now() + timedelta(minutes=10)
+                                    cookie_manager.set('user_token', dados['user'], expires_at=expires)
+                                
+                                # --- 2. SALVAR SESSÃO ---
+                                st.session_state.authenticated = True
+                                st.session_state.user_login = dados['user'] 
+                                st.session_state.user_nome = dados.get('nome', user_input)
+                                st.session_state.nivel = str(dados.get('nivel', 'SDR')).upper()
+                                st.session_state.current_page = "DASHBOARD"
+                                
+                                st.success("Login realizado!")
+                                time.sleep(1)
+                                st.rerun()
+                            else:
+                                st.error("❌ Usuário ou senha incorretos.")
+                        except Exception as e:
+                            st.error(f"Erro de conexão: {e}")
                     else:
                         st.warning("⚠️ Preencha todos os campos.")
 
@@ -76,4 +84,4 @@ def render_login():
                     st.session_state.auth_mode = "recuperar"
                     st.rerun()
 
-        st.markdown("<p style='text-align: center; color: #555;'>v2.0 - Grupo Acelerador</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #555;'>v2.2 - Logout Automático (10min)</p>", unsafe_allow_html=True)
