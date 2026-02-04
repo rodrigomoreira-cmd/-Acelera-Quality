@@ -19,19 +19,57 @@ from auditoria import render_auditoria
 from relatorios import render_relatorios 
 from gestao_criterios import render_gestao_criterios 
 from style import apply_custom_styles
-from database import get_all_records_db, supabase, buscar_contagem_notificacoes, limpar_todas_notificacoes
+
+# Adicionado 'anular_monitoria' na importação
+from database import get_all_records_db, supabase, buscar_contagem_notificacoes, limpar_todas_notificacoes, anular_monitoria
+
+# ==========================================================
+# 🛑 MODAL DE CONFIRMAÇÃO DE ANULAÇÃO
+# ==========================================================
+@st.dialog("🗑️ Confirmar Anulação")
+def modal_anular(id_mon):
+    st.warning(f"Tem a certeza que deseja excluir permanentemente a monitoria ID: {id_mon}?")
+    st.markdown("""
+        <small style='color: #ff4b4b;'>
+        ⚠️ Esta ação removerá a nota do cálculo de média e apagará quaisquer contestações associadas.
+        </small>
+    """, unsafe_allow_html=True)
+    
+    motivo = st.text_input("Motivo obrigatório para auditoria:", placeholder="Ex: Monitoria duplicada / Erro de sistema")
+    
+    col_a, col_b = st.columns(2)
+    if col_a.button("Confirmar Exclusão", type="primary", use_container_width=True):
+        if not motivo or len(motivo) < 5:
+            st.error("Escreva um motivo válido (min. 5 letras).")
+        else:
+            sucesso, msg = anular_monitoria(id_mon, motivo)
+            if sucesso:
+                st.success("Registro removido!")
+                time.sleep(1.0)
+                st.rerun()
+            else:
+                st.error(f"Erro: {msg}")
+    
+    if col_b.button("Cancelar", use_container_width=True):
+        st.rerun()
 
 # ==========================================================
 # 📜 FUNÇÃO HISTÓRICO (GLOBAL)
 # ==========================================================
 def render_historico_geral(nivel, nome_completo):
     st.title("Histórico de Monitorias")
+    
+    # Botão para forçar atualização do cache se necessário
+    if st.button("🔄 Atualizar Tabela", help="Recarrega os dados do banco"):
+        get_all_records_db.clear()
+        st.rerun()
+
     df = get_all_records_db("monitorias")
     
     if df is not None and not df.empty:
         df['sdr_upper'] = df['sdr'].astype(str).str.strip().str.upper()
         
-        # Filtro: ADMIN e GESTAO podem buscar qualquer um
+        # LOGICA: SDR vê só o dele. ADMIN e GESTAO veem filtro de busca.
         if nivel not in ["ADMIN", "GESTAO"]:
             df_exibicao = df[df['sdr_upper'] == nome_completo.upper()].copy()
         else:
@@ -43,21 +81,40 @@ def render_historico_geral(nivel, nome_completo):
             def extrair_falhas(detalhes):
                 if not detalhes or not isinstance(detalhes, dict): return "Nenhuma"
                 falhas = [f"{k} ({v})" for k, v in detalhes.items() if v in ["NC", "NCG"]]
-                return ", ".join(falhas) if falhas else "Tudo Conforme"
+                return ", ".join(falhas) if falhas else "✅ 100% Conforme"
 
             df_exibicao['Itens NC/NCG'] = df_exibicao['detalhes'].apply(extrair_falhas)
             
-            # Tratamento de Data
             if 'criado_em' in df_exibicao.columns:
                 df_exibicao['Data'] = pd.to_datetime(df_exibicao['criado_em']).dt.strftime('%d/%m/%Y %H:%M')
             else:
                 df_exibicao['Data'] = "N/A"
 
+            # Exibe a tabela
             st.dataframe(
-                df_exibicao[['Data', 'sdr', 'nota', 'Itens NC/NCG', 'monitor_responsavel', 'observacoes']], 
+                df_exibicao[['id', 'Data', 'sdr', 'nota', 'Itens NC/NCG', 'monitor_responsavel', 'observacoes']], 
                 use_container_width=True, 
-                hide_index=True
+                hide_index=True,
+                column_config={
+                    "id": st.column_config.NumberColumn("ID", width="small"),
+                    "nota": st.column_config.ProgressColumn("Nota", format="%d%%", min_value=0, max_value=100)
+                }
             )
+
+            # --- ZONA ADMINISTRATIVA (APENAS ADMIN VÊ) ---
+            if nivel == "ADMIN":
+                st.divider()
+                st.markdown("### 🛠️ Gerir Registos (Admin)")
+                with st.expander("🗑️ Área de Risco: Anular Monitoria"):
+                    st.warning("Atenção: A anulação é irreversível.")
+                    
+                    # Selectbox com os IDs visíveis na tabela acima
+                    lista_ids = df_exibicao['id'].unique()
+                    id_selecionado = st.selectbox("Selecione o ID da monitoria para anular:", options=lista_ids)
+                    
+                    if st.button(f"Solicitar Anulação da Monitoria #{id_selecionado}", type="secondary"):
+                        modal_anular(id_selecionado)
+
         else:
             st.warning("Nenhum registro encontrado.")
     else:
@@ -72,7 +129,10 @@ def main():
     # CSS para garantir visibilidade da sidebar
     st.markdown("""
         <style>
-            section[data-testid="stSidebar"] { display: block !important; visibility: visible !important; }
+            section[data-testid="stSidebar"] {
+                display: block !important;
+                visibility: visible !important;
+            }
         </style>
     """, unsafe_allow_html=True)
 
@@ -105,7 +165,7 @@ def main():
                 if res.data and res.data.get('esta_ativo', True):
                     user_data = res.data
                     st.session_state.authenticated = True
-                    st.session_state.user_nome = user_data.get('nome')
+                    st.session_state.user_nome = user_data.get('nome', cookie_user)
                     st.session_state.user_login = user_data['user']
                     st.session_state.nivel = str(user_data.get('nivel', 'SDR')).upper()
                     st.session_state.foto_url = user_data.get('foto_url')
@@ -138,7 +198,7 @@ def main():
 
     # --- SIDEBAR ---
     with st.sidebar:
-        # Perfil
+        # Perfil Visual
         foto_perfil = st.session_state.get('foto_url')
         if foto_perfil:
             st.markdown(f"<div style='display:flex;justify-content:center;margin-bottom:10px;'><img src='{foto_perfil}' style='width:100px;height:100px;border-radius:50%;object-fit:cover;border:2px solid white;'></div>", unsafe_allow_html=True)
@@ -159,14 +219,13 @@ def main():
         
         st.divider()
 
-        # Função de Botão
         def menu_btn(label, target):
             is_active = st.session_state.current_page == target
             if st.button(label, use_container_width=True, type="primary" if is_active else "secondary", key=f"nav_{target}"):
                 st.session_state.current_page = target
                 st.rerun()
 
-        # Menu
+        # --- MENU ---
         menu_btn("DASHBOARD", "DASHBOARD")
         
         if nivel == "SDR":
@@ -183,6 +242,7 @@ def main():
 
         if nivel == "ADMIN":
             st.markdown("---")
+            st.markdown("### Administrativo")
             menu_btn("NOVA MONITORIA", "MONITORIA")
             menu_btn("CONFIG. CRITÉRIOS", "CONFIG_CRITERIOS")
             menu_btn("GESTAO DE EQUIPE", "GESTAO_USUARIOS")
@@ -217,7 +277,6 @@ def main():
         elif page == "CONFIG_CRITERIOS": render_gestao_criterios()
         elif page == "AUDITORIA": render_auditoria()
         else: render_dashboard()
-        
     except Exception as e:
         st.error(f"Erro ao carregar {page}: {str(e)}")
 

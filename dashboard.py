@@ -9,7 +9,7 @@ def render_dashboard():
     nivel_usuario = str(st.session_state.get('nivel', 'SDR')).upper()
     nome_completo_logado = st.session_state.get('user_nome', 'Usuário')
 
-    # 1. Busca de Dados
+    # 1. Busca de Dados (Agora Cacheada e Rápida)
     df = get_all_records_db("monitorias")
     
     if df is None or df.empty:
@@ -82,7 +82,9 @@ def render_dashboard():
                 foto_sdr = None
             
             with col_rank[i]:
+                # Renderiza foto ou ícone padrão
                 foto_html = f'<img src="{foto_sdr}" style="width: 70px; height: 70px; border-radius: 50%; object-fit: cover; border: 3px solid {cores[i]};">' if foto_sdr else '<div style="font-size: 40px;">👤</div>'
+                
                 st.markdown(f"""
                     <div style="background-color: {cores[i]}15; padding: 15px; border-radius: 15px; border: 2px solid {cores[i]}; text-align: center;">
                         {foto_html}<br>
@@ -120,7 +122,45 @@ def render_dashboard():
     fig_gauge.update_layout(height=250, margin=dict(l=30, r=30, t=40, b=20), paper_bgcolor='rgba(0,0,0,0)', font={'color': "white"})
     st.plotly_chart(fig_gauge, use_container_width=True)
 
-    # --- 5. GRÁFICO DE EVOLUÇÃO ---
+    # --- 5. GRÁFICO DE OFENSORES (NOVO - PARETO) ---
+    st.write("##")
+    st.subheader("📉 Principais Ofensores (Onde perdemos pontos?)")
+    
+    # Lógica para extrair e contar erros do JSON
+    if 'detalhes' in df_filtrado.columns:
+        erros_dict = {}
+        for _, row in df_filtrado.iterrows():
+            detalhes = row['detalhes']
+            if isinstance(detalhes, dict):
+                for criterio, status in detalhes.items():
+                    if status in ["NC", "NCG"]: # Conta apenas Não Conformidades
+                        erros_dict[criterio] = erros_dict.get(criterio, 0) + 1
+        
+        if erros_dict:
+            # Cria DataFrame para o gráfico
+            df_erros = pd.DataFrame(list(erros_dict.items()), columns=['Critério', 'Ocorrências'])
+            df_erros = df_erros.sort_values(by='Ocorrências', ascending=True)
+
+            fig_pareto = px.bar(
+                df_erros, 
+                x='Ocorrências', 
+                y='Critério', 
+                orientation='h',
+                text='Ocorrências',
+                color_discrete_sequence=['#ff4b4b'] # Vermelho para indicar erro
+            )
+            fig_pareto.update_layout(
+                paper_bgcolor='rgba(0,0,0,0)', 
+                plot_bgcolor='rgba(0,0,0,0)', 
+                font={'color': "white"},
+                xaxis_title="Quantidade de Erros",
+                yaxis_title=""
+            )
+            st.plotly_chart(fig_pareto, use_container_width=True)
+        else:
+            st.success("🎉 Nenhum erro encontrado no período selecionado!")
+
+    # --- 6. GRÁFICO DE EVOLUÇÃO ---
     st.write("##")
     fig_evolucao = px.area(
         df_filtrado, x='criado_em', y='nota', 
