@@ -4,7 +4,9 @@ import time
 import extra_streamlit_components as stx 
 from datetime import datetime, timedelta
 
-# Importação das páginas
+# ==========================================================
+# 📦 IMPORTAÇÕES DE MÓDULOS
+# ==========================================================
 from auth import render_login
 from dashboard import render_dashboard
 from monitoria import render_nova_monitoria
@@ -17,10 +19,11 @@ from auditoria import render_auditoria
 from relatorios import render_relatorios 
 from gestao_criterios import render_gestao_criterios 
 from style import apply_custom_styles
-
 from database import get_all_records_db, supabase, buscar_contagem_notificacoes, limpar_todas_notificacoes
 
-# --- FUNÇÃO AUXILIAR DE HISTÓRICO ---
+# ==========================================================
+# 📜 FUNÇÃO HISTÓRICO (GLOBAL)
+# ==========================================================
 def render_historico_geral(nivel, nome_completo):
     st.title("Histórico de Monitorias")
     df = get_all_records_db("monitorias")
@@ -28,6 +31,7 @@ def render_historico_geral(nivel, nome_completo):
     if df is not None and not df.empty:
         df['sdr_upper'] = df['sdr'].astype(str).str.strip().str.upper()
         
+        # Filtro: ADMIN e GESTAO podem buscar qualquer um
         if nivel not in ["ADMIN", "GESTAO"]:
             df_exibicao = df[df['sdr_upper'] == nome_completo.upper()].copy()
         else:
@@ -42,6 +46,8 @@ def render_historico_geral(nivel, nome_completo):
                 return ", ".join(falhas) if falhas else "Tudo Conforme"
 
             df_exibicao['Itens NC/NCG'] = df_exibicao['detalhes'].apply(extrair_falhas)
+            
+            # Tratamento de Data
             if 'criado_em' in df_exibicao.columns:
                 df_exibicao['Data'] = pd.to_datetime(df_exibicao['criado_em']).dt.strftime('%d/%m/%Y %H:%M')
             else:
@@ -57,65 +63,73 @@ def render_historico_geral(nivel, nome_completo):
     else:
         st.info("O banco de dados está vazio.")
 
-# --- MAIN ---
+# ==========================================================
+# 🚀 FUNÇÃO PRINCIPAL (MAIN)
+# ==========================================================
 def main():
     st.set_page_config(layout="wide", page_title="Acelera Quality", page_icon="🚀")
     
     # CSS para garantir visibilidade da sidebar
     st.markdown("""
         <style>
-            section[data-testid="stSidebar"] {
-                display: block !important;
-                visibility: visible !important;
-            }
+            section[data-testid="stSidebar"] { display: block !important; visibility: visible !important; }
         </style>
     """, unsafe_allow_html=True)
 
-    # 1. Inicialização do CookieManager com chave fixa
+    # 1. Inicialização do CookieManager
     cookie_manager = stx.CookieManager(key="cookie_handler_main")
 
-    # Inicialização de estados
+    # 2. Inicialização de estados fundamentais
     if "authenticated" not in st.session_state: st.session_state.authenticated = False
     if "logout_clicked" not in st.session_state: st.session_state.logout_clicked = False 
     if "current_page" not in st.session_state: st.session_state.current_page = "DASHBOARD"
+    
+    # --- TRAVA DE SEGURANÇA: LIMPEZA NO STARTUP ---
+    if "app_init" not in st.session_state:
+        st.session_state.app_init = True
 
-    # 🔄 LÓGICA DE AUTO-LOGIN (PERSISTÊNCIA F5)
+    # --- LÓGICA DE AUTO-LOGIN BLINDADA (RESOLVE O F5) ---
     if not st.session_state.authenticated and not st.session_state.logout_clicked:
-        # Pequeno delay técnico para o componente ler o browser
-        time.sleep(0.2) 
+        # Tenta ler o cookie
         cookie_user = cookie_manager.get('user_token')
         
-        # Só valida se o cookie for real e não for string vazia de logout
+        # Se o cookie não veio de primeira (comum no F5), esperamos um pouco e tentamos de novo
+        if cookie_user is None:
+            time.sleep(0.6)  # Tempo necessário para o componente JS carregar no browser
+            cookie_user = cookie_manager.get('user_token')
+
+        # Se agora temos um cookie válido (e não vazio)
         if cookie_user and str(cookie_user).strip() != "":
             try:
                 res = supabase.table("usuarios").select("*").eq("user", cookie_user).single().execute()
                 if res.data and res.data.get('esta_ativo', True):
                     user_data = res.data
                     st.session_state.authenticated = True
-                    st.session_state.user_nome = user_data.get('nome', cookie_user)
+                    st.session_state.user_nome = user_data.get('nome')
                     st.session_state.user_login = user_data['user']
                     st.session_state.nivel = str(user_data.get('nivel', 'SDR')).upper()
                     st.session_state.foto_url = user_data.get('foto_url')
                     st.rerun() 
                 else:
-                    cookie_manager.delete('user_token')
+                    # Usuário inativo ou inválido, mata o cookie
+                    cookie_manager.set('user_token', "", expires_at=datetime.now() - timedelta(days=1))
             except Exception:
                 pass
 
-    # 🔒 BLOQUEIO DE ACESSO
+    # 3. BLOQUEIO DE ACESSO
     if not st.session_state.authenticated:
         render_login(cookie_manager)
         st.stop()
 
-    # ⏳ KEEP-ALIVE E INATIVIDADE (10 MINUTOS)
-    # Sempre que o app é interagido, o cookie é renovado para mais 10 min
-    if st.session_state.authenticated and not st.session_state.logout_clicked:
+    # --- RENOVAÇÃO / KEEP-ALIVE (Inatividade de 10 minutos) ---
+    # Só renova se o usuário NÃO clicou em sair
+    if not st.session_state.logout_clicked:
         new_expiry = datetime.now() + timedelta(minutes=10)
         cookie_manager.set(
             'user_token', 
             st.session_state.user_login, 
             expires_at=new_expiry, 
-            key="renew_cookie"
+            key="renew_session"
         )
 
     apply_custom_styles()
@@ -124,6 +138,7 @@ def main():
 
     # --- SIDEBAR ---
     with st.sidebar:
+        # Perfil
         foto_perfil = st.session_state.get('foto_url')
         if foto_perfil:
             st.markdown(f"<div style='display:flex;justify-content:center;margin-bottom:10px;'><img src='{foto_perfil}' style='width:100px;height:100px;border-radius:50%;object-fit:cover;border:2px solid white;'></div>", unsafe_allow_html=True)
@@ -144,13 +159,14 @@ def main():
         
         st.divider()
 
+        # Função de Botão
         def menu_btn(label, target):
             is_active = st.session_state.current_page == target
             if st.button(label, use_container_width=True, type="primary" if is_active else "secondary", key=f"nav_{target}"):
                 st.session_state.current_page = target
                 st.rerun()
 
-        # --- MENU ---
+        # Menu
         menu_btn("DASHBOARD", "DASHBOARD")
         
         if nivel == "SDR":
@@ -158,10 +174,7 @@ def main():
             menu_btn("MEUS RESULTADOS", "MEUS_RESULTADOS")
             menu_btn("HISTÓRICO", "HISTORICO")
 
-        if nivel == "ADMIN":
-            menu_btn("CONTESTAÇÕES", "CONTESTACAO")
-
-        if nivel == "GESTAO":
+        if nivel in ["ADMIN", "GESTAO"]:
             menu_btn("HISTÓRICO GERAL", "HISTORICO")
             menu_btn("RELATÓRIOS", "RELATORIOS")
             menu_btn("CADASTRAR USUÁRIO", "CADASTRO")
@@ -170,31 +183,20 @@ def main():
 
         if nivel == "ADMIN":
             st.markdown("---")
-            st.markdown("### Administrativo")
             menu_btn("NOVA MONITORIA", "MONITORIA")
             menu_btn("CONFIG. CRITÉRIOS", "CONFIG_CRITERIOS")
-            menu_btn("RELATÓRIOS", "RELATORIOS")
             menu_btn("GESTAO DE EQUIPE", "GESTAO_USUARIOS")
-            menu_btn("CADASTRAR USUÁRIO", "CADASTRO")
             menu_btn("AUDITORIA", "AUDITORIA")
 
         st.divider()
         
-        # -----------------------------------------------------------
-        # LOGOUT "NUCLEAR" (Limpa cookies e sessão instantaneamente)
-        # -----------------------------------------------------------
+        # --- LOGOUT DEFINITIVO ---
         if st.button("Sair", use_container_width=True, key="logout_btn"):
-            # 1. Marca logout no estado da sessão
             st.session_state.logout_clicked = True
             st.session_state.authenticated = False
-            
-            # 2. Força a expiração do cookie (sobrescreve com data antiga)
+            # NUCLEAR: Sobrescreve o cookie com valor vazio e expira no passado
             cookie_manager.set('user_token', "", expires_at=datetime.now() - timedelta(days=1))
-            
-            # 3. Pequeno tempo para garantir a escrita no browser antes do reload
             time.sleep(0.5)
-            
-            # 4. Limpa tudo e recarrega
             st.rerun()
 
     # --- ROTEAMENTO ---
@@ -204,7 +206,10 @@ def main():
         elif page == "PERFIL": render_meu_perfil()
         elif page == "CONTESTACAO": render_contestacao()
         elif page == "MEUS_RESULTADOS" and nivel == "SDR": render_meus_resultados()
+        
+        # A função agora está no escopo global e pode ser chamada
         elif page == "HISTORICO": render_historico_geral(nivel, nome_completo)
+        
         elif page == "RELATORIOS": render_relatorios()
         elif page == "CADASTRO": render_cadastro()
         elif page == "MONITORIA": render_nova_monitoria()
@@ -212,6 +217,7 @@ def main():
         elif page == "CONFIG_CRITERIOS": render_gestao_criterios()
         elif page == "AUDITORIA": render_auditoria()
         else: render_dashboard()
+        
     except Exception as e:
         st.error(f"Erro ao carregar {page}: {str(e)}")
 

@@ -2,7 +2,7 @@ import streamlit as st
 import time
 from datetime import datetime, timedelta
 from database import supabase
-from recuperacao import render_recuperacao # Certifique-se que este arquivo existe
+from recuperacao import render_recuperacao 
 
 def render_login(cookie_manager=None):
     if "auth_mode" not in st.session_state:
@@ -50,6 +50,7 @@ def render_login(cookie_manager=None):
                 if st.button("Entrar", use_container_width=True, type="primary"):
                     if user_input and password:
                         try:
+                            # Busca o usuário no Supabase
                             res = supabase.table("usuarios").select("*").eq("user", user_input).eq("senha", password).execute()
                             
                             if res.data:
@@ -58,21 +59,28 @@ def render_login(cookie_manager=None):
                                     st.error("Conta desativada. Fale com o Admin.")
                                     return
 
-                                # Grava o Cookie inicial
-                                if cookie_manager:
-                                    expires = datetime.now() + timedelta(minutes=10)
-                                    cookie_manager.set('user_token', dados['user'], expires_at=expires)
+                                # --- SUCESSO NO LOGIN ---
                                 
-                                # Define Sessão
+                                # 1. Define Variáveis de Sessão IMEDIATAMENTE
                                 st.session_state.authenticated = True
                                 st.session_state.user_login = dados['user'] 
                                 st.session_state.user_nome = dados.get('nome', user_input)
                                 st.session_state.nivel = str(dados.get('nivel', 'SDR')).upper()
                                 st.session_state.foto_url = dados.get('foto_url')
                                 st.session_state.current_page = "DASHBOARD"
+                                
+                                # LIMPEZA CRÍTICA: Garante que o sistema pare de ignorar o login automático
                                 st.session_state.logout_clicked = False
                                 
-                                st.success("Login realizado! Redirecionando...")
+                                # 2. Grava o Cookie (user_token) com validade de 10 minutos
+                                if cookie_manager:
+                                    expires = datetime.now() + timedelta(minutes=10)
+                                    # Usamos a mesma chave 'user_token' que o app.py procura
+                                    cookie_manager.set('user_token', dados['user'], expires_at=expires, key="login_session")
+                                
+                                st.success("Acesso autorizado! Carregando...")
+                                
+                                # Pequena pausa para garantir que o navegador salvou o cookie antes do rerun
                                 time.sleep(0.5)
                                 st.rerun()
                             else:
@@ -87,4 +95,4 @@ def render_login(cookie_manager=None):
                     st.session_state.auth_mode = "recuperar"
                     st.rerun()
 
-        st.markdown("<p style='text-align: center; color: #555; margin-top:20px;'>Acelera Quality v2.2 | Logout Automático (10min)</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; color: #555; margin-top:20px;'>Acelera Quality v2.7 | Sessão Segura 10min</p>", unsafe_allow_html=True)

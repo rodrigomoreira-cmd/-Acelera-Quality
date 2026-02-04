@@ -1,79 +1,83 @@
 import streamlit as st
-import time
-from database import supabase
+import hashlib
+from database import supabase, registrar_auditoria
+
+def hash_password(password):
+    """Transforma a senha em SHA-256 para manter o padrão do login."""
+    return hashlib.sha256(str.encode(password)).hexdigest()
 
 def render_cadastro():
-    # 1. Verificação de Permissão: Apenas ADMIN e GESTAO podem acessar
-    nivel_logado = st.session_state.get('nivel', '').upper()
-    
-    if nivel_logado not in ["ADMIN", "GESTAO"]:
-        st.error("⛔ Você não tem permissão para acessar esta página.")
-        return
-
     st.title("👥 Cadastro de Novo Usuário")
+    
+    # Recupera o nível de quem está logado para aplicar a restrição
+    nivel_logado = st.session_state.get('nivel', 'SDR').upper()
+    
     st.markdown("O e-mail será gerado automaticamente com o domínio **@grupoacelerador.com.br**.")
 
-    # Container para organizar o visual
-    with st.container(border=True):
-        with st.form("form_cadastro_final", clear_on_submit=True):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                nome_completo = st.text_input("Nome Completo", placeholder="Ex: João Silva")
-                user_prefix = st.text_input("Usuário (Apenas o prefixo)", placeholder="Ex: joao.silva").strip().lower()
-            
-            with col2:
-                # ADICIONADO: Opção GESTAO na lista
-                opcoes_nivel = ["SDR", "GESTAO", "ADMIN"]
-                nivel_acesso = st.selectbox("Nível de Permissão", options=opcoes_nivel, index=0)
-                
-                senha_pura = st.text_input("Senha Inicial", type="password")
-            
-            # Campo opcional de Foto
-            foto_url = st.text_input("URL da Foto (Opcional):", placeholder="https://...")
+    with st.form("form_cadastro_final", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        nome_completo = col1.text_input("Nome Completo", placeholder="Ex: João Silva")
+        user_prefix = col2.text_input("Usuário (Apenas o prefixo)", placeholder="Ex: joao.silva")
+        
+        col3, col4 = st.columns(2)
+        senha_pura = col3.text_input("Senha Inicial", type="password")
+        telefone = col4.text_input("Telefone/WhatsApp", placeholder="(11) 99999-9999")
 
-            st.divider()
-            
-            col_b1, col_b2 = st.columns([1, 2])
-            enviar = col_b2.form_submit_button("🚀 Finalizar Cadastro", type="primary", use_container_width=True)
+        col5, col_extra = st.columns(2)
+        
+        # --- LÓGICA DE RESTRIÇÃO DE NÍVEL ---
+        if nivel_logado == "GESTAO":
+            # Gestão só pode cadastrar SDR
+            opcoes_nivel = ["SDR"]
+            st.info("💡 Como Gestor, você possui permissão para cadastrar apenas novos SDRs.")
+        else:
+            # Admin pode cadastrar qualquer um
+            opcoes_nivel = ["SDR", "ADMIN", "GESTAO"]
+        
+        nivel_acesso = col5.selectbox("Nível de Permissão para o novo usuário", options=opcoes_nivel, index=0)
 
-            if enviar:
-                # 2. Validação de campos obrigatórios
-                if not nome_completo or not user_prefix or not senha_pura:
-                    st.warning("⚠️ Preencha os campos obrigatórios (Nome, Usuário e Senha).")
-                elif len(senha_pura) < 4:
-                    st.warning("⚠️ A senha deve ter pelo menos 4 caracteres.")
-                else:
-                    try:
-                        # Monta o e-mail final
-                        email_completo = f"{user_prefix}@grupoacelerador.com.br"
+        st.divider()
+        
+        if st.form_submit_button("🚀 Finalizar Cadastro"):
+            # 1. Validação de campos obrigatórios
+            if not nome_completo or not user_prefix or not senha_pura:
+                st.error("⚠️ Preencha os campos obrigatórios (Nome, Usuário e Senha).")
+            else:
+                try:
+                    # Limpeza e padronização
+                    email_completo = f"{user_prefix.strip().lower()}@grupoacelerador.com.br"
+                    
+                    # 2. Verifica duplicidade no banco
+                    check = supabase.table("usuarios").select("user").eq("user", email_completo).execute()
+                    
+                    if check.data:
+                        st.error(f"❌ O usuário '{email_completo}' já existe.")
+                    else:
+                        # 3. Criptografia
+                        senha_hash = hash_password(senha_pura)
+
+                        # 4. Preparação do Cadastro
+                        payload = {
+                            "nome": nome_completo.strip(),
+                            "user": email_completo,
+                            "email": email_completo,
+                            "senha": senha_hash,
+                            "telefone": telefone.strip() if telefone else None,
+                            "nivel": nivel_acesso,
+                            "esta_ativo": True
+                        }
                         
-                        # 3. Verifica duplicidade no banco
-                        check = supabase.table("usuarios").select("user").eq("user", email_completo).execute()
-                        
-                        if check.data:
-                            st.error(f"❌ O usuário '{email_completo}' já existe no sistema.")
-                        else:
-                            # 4. Preparação do Cadastro
-                            # Nota: Enviando senha pura para manter compatibilidade com auth.py atual
-                            payload = {
-                                "nome": nome_completo.strip(),
-                                "user": email_completo,
-                                "email": email_completo, # Redundância útil
-                                "senha": senha_pura, 
-                                "nivel": nivel_acesso,
-                                "foto_url": foto_url if foto_url else None,
-                                "esta_ativo": True
-                            }
-                            
-                            # 5. Insere no Supabase
-                            supabase.table("usuarios").insert(payload).execute()
+                        supabase.table("usuarios").insert(payload).execute()
 
-                            # Mensagem de Sucesso
-                            st.success(f"✅ Usuário criado com sucesso!")
-                            st.info(f"Login: **{email_completo}** | Nível: **{nivel_acesso}**")
-                            time.sleep(2)
-                            st.rerun()
-                            
-                    except Exception as e:
-                        st.error(f"❌ Ocorreu um erro ao cadastrar: {e}")
+                        # 5. Registro na Auditoria
+                        registrar_auditoria(
+                            acao="CADASTRO",
+                            colaborador_afetado=nome_completo.strip(),
+                            detalhes=f"Usuário {nivel_logado} criou {email_completo} com nível {nivel_acesso}."
+                        )
+                        
+                        st.success(f"✅ {nome_completo} cadastrado com sucesso!")
+                        st.balloons()
+                        
+                except Exception as e:
+                    st.error(f"❌ Ocorreu um erro ao cadastrar: {e}")
