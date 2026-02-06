@@ -56,25 +56,38 @@ def get_criterios_ativos():
 # 🕵️ SISTEMA CENTRAL DE AUDITORIA (LOG COMPLETO)
 # ==========================================================
 
-def registrar_auditoria(acao, colaborador_afetado, detalhes):
-    """Grava log de ações no banco de dados com Timezone Correto."""
-    if not supabase: return
+
+# No arquivo database.py, procure ou adicione esta função:
+
+def registrar_auditoria(acao, admin_nome, detalhes, afetado=None):
+    """
+    Registra uma ação no banco de dados para segurança e rastreio.
+    """
     try:
-        admin = st.session_state.get('user_nome', 'Sistema')
-        hora_br = obter_hora_brasil()
+        # Pega a hora certa de Brasília
+        fuso_br = pytz.timezone('America/Sao_Paulo')
+        hora_agora = datetime.now(fuso_br).isoformat()
         
         payload = {
-            "admin_responsavel": admin,
-            "colaborador_afetado": colaborador_afetado,
+            "data_evento": hora_agora,
             "acao": acao,
+            "admin_responsavel": admin_nome,  # Tem que bater com o SQL
             "detalhes": detalhes,
-            "data_evento": hora_br,
-            "criado_em": hora_br
+            "colaborador_afetado": afetado or "N/A"
         }
-        supabase.table("auditoria").insert(payload).execute()
-        get_all_records_db.clear() # Limpa cache para atualizar logs na tela
+        
+        # Tenta inserir
+        res = supabase.table("auditoria").insert(payload).execute()
+        
+        # Limpa o cache para que o painel mostre o dado novo imediatamente
+        get_all_records_db.clear()
+        
+        return True
     except Exception as e:
-        print(f"Falha ao registrar auditoria: {e}")
+        # Se der erro, ele vai aparecer no seu terminal do VS Code
+        print(f"❌ ERRO CRÍTICO AO SALVAR AUDITORIA: {e}")
+        return False
+
 
 # ==========================================================
 # 📝 MONITORIAS & NOTIFICAÇÕES
