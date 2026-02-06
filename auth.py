@@ -1,98 +1,91 @@
 import streamlit as st
 import time
+import hashlib
+from database import supabase, registrar_auditoria
 from datetime import datetime, timedelta
-from database import supabase
-from recuperacao import render_recuperacao 
 
-def render_login(cookie_manager=None):
-    if "auth_mode" not in st.session_state:
-        st.session_state.auth_mode = "login"
+def hash_password(password):
+    """Gera o hash SHA-256 para comparação segura."""
+    return hashlib.sha256(str.encode(password.strip())).hexdigest()
 
-    # Lógica de Recuperação de Senha
-    if st.session_state.auth_mode == "recuperar":
-        if st.button("⬅️ Voltar para Login"):
-            st.session_state.auth_mode = "login"
-            st.rerun()
-        render_recuperacao()
-        return
-
-    # Estilo Dark Mode para a tela de Login
-    st.markdown("""
-        <style>
-            [data-testid="stSidebar"], [data-testid="stHeader"] {display: none;}
-            .stApp { background-color: #000000 !important; }
-            h1, h2, h3, p, label { color: #ffffff !important; }
-            [data-testid="stVerticalBlockBorderWrapper"] {
-                background-color: #111111 !important;
-                border: 1px solid #333333 !important;
-                border-radius: 15px !important;
-                padding: 30px !important;
-            }
-            input { background-color: #222222 !important; color: #ffffff !important; border: 1px solid #444444 !important; }
-        </style>
-    """, unsafe_allow_html=True)
-
-    _, col_central, _ = st.columns([1, 1.8, 1])
-
-    with col_central:
-        st.write("##")
-        st.markdown("<h1 style='text-align: center;'>🚀 Acelera Quality</h1>", unsafe_allow_html=True)
+def render_login(cookie_manager):
+    # Layout centralizado
+    col1, col2, col3 = st.columns([1, 2, 1])
+    
+    with col2:
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.title("🔐 Acelera Quality")
+        st.markdown("Faça login para acessar o sistema.")
         
-        with st.container(border=True):
-            st.subheader("Login")
-            user_input = st.text_input("Usuário (E-mail)", key="login_user").strip().lower()
-            password = st.text_input("Senha", type="password", key="login_pass")
+        with st.form("login_form", clear_on_submit=False):
+            email = st.text_input("E-mail", placeholder="seu.email@grupoacelerador.com.br")
+            password = st.text_input("Senha", type="password")
             
-            st.write("#")
-            col_btn1, col_btn2 = st.columns(2)
+            submit = st.form_submit_button("Entrar", use_container_width=True, type="primary")
             
-            with col_btn1:
-                if st.button("Entrar", use_container_width=True, type="primary"):
-                    if user_input and password:
-                        try:
-                            # Busca o usuário no Supabase
-                            res = supabase.table("usuarios").select("*").eq("user", user_input).eq("senha", password).execute()
+            if submit:
+                if not email or not password:
+                    st.warning("Preencha todos os campos.")
+                else:
+                    # Limpeza preventiva (minúsculo e sem espaços)
+                    email_limpo = email.lower().strip()
+                    password_limpo = password.strip()
+                    
+                    try:
+                        # 1. Busca o usuário no banco (usando ilike para ignorar maiúsculas/minúsculas)
+                        response = supabase.table("usuarios").select("*").ilike("user", email_limpo).execute()
+                        user_data = response.data[0] if response.data else None
+                        
+                        if not user_data:
+                            st.error("Usuário não encontrado.")
+                        elif not user_data.get('esta_ativo', True):
+                            st.error("🚫 Acesso bloqueado. Contate o administrador.")
+                        else:
+                            # --- LÓGICA DE VERIFICAÇÃO DE SENHA (HÍBRIDA) ---
+                            senha_banco = user_data.get('senha')  # ou 'password', conforme seu banco
                             
-                            if res.data:
-                                dados = res.data[0]
-                                if not dados.get('esta_ativo', True):
-                                    st.error("Conta desativada. Fale com o Admin.")
-                                    return
-
-                                # --- SUCESSO NO LOGIN ---
+                            # Calcula o hash da senha que foi digitada agora
+                            hash_digitado = hash_password(password_limpo)
+                            
+                            acesso_permitido = False
+                            
+                            # Verificação 1: A senha digitada bate com o Hash do banco? (Usuários com senha nova)
+                            if hash_digitado == senha_banco:
+                                acesso_permitido = True
                                 
-                                # 1. Define Variáveis de Sessão IMEDIATAMENTE
+                            # Verificação 2: A senha digitada é IGUAL ao texto do banco? (Usuários antigos/Legado)
+                            elif password_limpo == senha_banco:
+                                acesso_permitido = True
+                                # Opcional: Avisar para trocar a senha futuramente
+                            
+                            if acesso_permitido:
+                                # SUCESSO! Configura a sessão
+                                st.success(f"Bem-vindo, {user_data['nome']}!")
+                                
+                                # Define variáveis de sessão
                                 st.session_state.authenticated = True
-                                st.session_state.user_login = dados['user'] 
-                                st.session_state.user_nome = dados.get('nome', user_input)
-                                st.session_state.nivel = str(dados.get('nivel', 'SDR')).upper()
-                                st.session_state.foto_url = dados.get('foto_url')
-                                st.session_state.current_page = "DASHBOARD"
+                                st.session_state.user_nome = user_data['nome']
+                                st.session_state.user_login = user_data['user'] # Salva o email exato do banco
+                                st.session_state.nivel = str(user_data.get('nivel', 'SDR')).upper()
+                                st.session_state.foto_url = user_data.get('foto_url')
                                 
-                                # LIMPEZA CRÍTICA: Garante que o sistema pare de ignorar o login automático
-                                st.session_state.logout_clicked = False
+                                # Grava Cookie de 24h
+                                expiry = datetime.now() + timedelta(days=1)
+                                cookie_manager.set('user_token', user_data['user'], expires_at=expiry)
                                 
-                                # 2. Grava o Cookie (user_token) com validade de 10 minutos
-                                if cookie_manager:
-                                    expires = datetime.now() + timedelta(minutes=10)
-                                    # Usamos a mesma chave 'user_token' que o app.py procura
-                                    cookie_manager.set('user_token', dados['user'], expires_at=expires, key="login_session")
+                                # Auditoria de Login
+                                registrar_auditoria("LOGIN", user_data['nome'], "Acesso realizado via Auth.")
                                 
-                                st.success("Acesso autorizado! Carregando...")
-                                
-                                # Pequena pausa para garantir que o navegador salvou o cookie antes do rerun
-                                time.sleep(0.5)
+                                time.sleep(1)
                                 st.rerun()
                             else:
-                                st.error("❌ Usuário ou senha incorretos.")
-                        except Exception as e:
-                            st.error(f"Erro de conexão: {e}")
-                    else:
-                        st.warning("⚠️ Preencha todos os campos.")
+                                st.error("Senha incorreta.")
+                                
+                    except Exception as e:
+                        st.error(f"Erro de conexão: {e}")
 
-            with col_btn2:
-                if st.button("Recuperar Senha", use_container_width=True):
-                    st.session_state.auth_mode = "recuperar"
-                    st.rerun()
-
-        st.markdown("<p style='text-align: center; color: #555; margin-top:20px;'>Acelera Quality v2.7 | Sessão Segura 10min</p>", unsafe_allow_html=True)
+        st.markdown("""
+            <div style='text-align: center; color: gray; font-size: 12px; margin-top: 20px;'>
+                Acelera Quality v2.0 • Sistema Seguro
+            </div>
+        """, unsafe_allow_html=True)

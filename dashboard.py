@@ -9,7 +9,7 @@ def render_dashboard():
     nivel_usuario = str(st.session_state.get('nivel', 'SDR')).upper()
     nome_completo_logado = st.session_state.get('user_nome', 'Usuário')
 
-    # 1. Busca de Dados (Agora Cacheada e Rápida)
+    # 1. Busca de Dados
     df = get_all_records_db("monitorias")
     
     if df is None or df.empty:
@@ -21,14 +21,12 @@ def render_dashboard():
     df['criado_em'] = pd.to_datetime(df['criado_em'])
     df = df.sort_values(by='criado_em')
 
-    # Título principal
     st.title("📊 Dashboard de Performance")
 
     # --- 1. SEÇÃO DE FILTROS ---
     with st.container(border=True):
         c1, c2 = st.columns([1, 1.5])
         
-        # ALTERAÇÃO AQUI: GESTAO e ADMIN podem filtrar SDRs
         if nivel_usuario in ["ADMIN", "GESTAO"]:
             lista_sdrs = sorted(df['sdr'].unique().tolist())
             sdr_escolhido = c1.selectbox("Filtrar por SDR:", ["Ver Todos"] + lista_sdrs)
@@ -49,7 +47,6 @@ def render_dashboard():
     # Aplicação dos Filtros
     df_filtrado = df.copy()
     
-    # Se for SDR, trava nele mesmo. Se for Admin/Gestão, respeita o selectbox.
     if nivel_usuario == "SDR":
         df_filtrado = df_filtrado[df_filtrado['sdr'] == nome_completo_logado]
     elif sdr_escolhido != "Ver Todos":
@@ -65,13 +62,27 @@ def render_dashboard():
         st.warning(f"⚠️ Sem dados para este período.")
         return
 
-    # --- 2. RANKING TOP 3 (Admin e Gestão veem o ranking geral) ---
+    # --- 2. RANKING ESTRATÉGICO (Top 3) ---
     if nivel_usuario in ["ADMIN", "GESTAO"] and sdr_escolhido == "Ver Todos":
-        st.markdown("### 🏆 Elite da Qualidade (Top 3)")
-        ranking = df_filtrado.groupby('sdr')['nota'].mean().sort_values(ascending=False).reset_index()
+        st.markdown("### 🏆 Elite da Qualidade (Ranking por Volume)")
+        
+        # LÓGICA A APLICADA:
+        # Agrupa por SDR, calcula média e conta monitorias
+        ranking = df_filtrado.groupby('sdr').agg(
+            nota_media=('nota', 'mean'),
+            qtd_mon=('id', 'count')
+        ).reset_index()
+
+        # ORDENAÇÃO: 1º Quantidade (Maior), 2º Nota (Maior - Desempate)
+        # Isso garante que a Ingrydi (5 mon) fique acima do Paulo (1 mon)
+        ranking = ranking.sort_values(
+            by=['qtd_mon', 'nota_media'], 
+            ascending=[False, False]
+        ).reset_index(drop=True)
         
         col_rank = st.columns(3)
         medalhas = ["🥇", "🥈", "🥉"]
+        # Cores para destacar a posição
         cores = ["#FFD700", "#C0C0C0", "#CD7F32"]
 
         for i, row in ranking.head(3).iterrows():
@@ -82,15 +93,15 @@ def render_dashboard():
                 foto_sdr = None
             
             with col_rank[i]:
-                # Renderiza foto ou ícone padrão
                 foto_html = f'<img src="{foto_sdr}" style="width: 70px; height: 70px; border-radius: 50%; object-fit: cover; border: 3px solid {cores[i]};">' if foto_sdr else '<div style="font-size: 40px;">👤</div>'
                 
                 st.markdown(f"""
-                    <div style="background-color: {cores[i]}15; padding: 15px; border-radius: 15px; border: 2px solid {cores[i]}; text-align: center;">
+                    <div style="background-color: {cores[i]}15; padding: 15px; border-radius: 15px; border: 2px solid {cores[i]}; text-align: center; min-height: 220px;">
                         {foto_html}<br>
                         <span style="font-size: 25px;">{medalhas[i]}</span><br>
-                        <b>{row['sdr']}</b><br>
-                        <h3 style="color: {cores[i]}; margin:0;">{row['nota']:.1f}%</h3>
+                        <b style="font-size: 14px;">{row['sdr']}</b><br>
+                        <h4 style="margin: 5px 0; color: #ccc; font-weight: normal;">{row['qtd_mon']} Monitorias</h4>
+                        <h2 style="color: {cores[i]}; margin:0;">{row['nota_media']:.1f}%</h2>
                     </div>
                 """, unsafe_allow_html=True)
         st.divider()
@@ -107,7 +118,6 @@ def render_dashboard():
     fig_gauge = go.Figure(go.Indicator(
         mode = "gauge+number",
         value = media_nota,
-        title = {'text': "Média Geral", 'font': {'size': 18}},
         number = {'suffix': "%"},
         gauge = {
             'axis': {'range': [0, 100]},
@@ -122,52 +132,55 @@ def render_dashboard():
     fig_gauge.update_layout(height=250, margin=dict(l=30, r=30, t=40, b=20), paper_bgcolor='rgba(0,0,0,0)', font={'color': "white"})
     st.plotly_chart(fig_gauge, use_container_width=True)
 
-    # --- 5. GRÁFICO DE OFENSORES (NOVO - PARETO) ---
+    # --- 5. GRÁFICO DE OFENSORES ---
     st.write("##")
-    st.subheader("📉 Principais Ofensores (Onde perdemos pontos?)")
+    st.subheader("📉 Principais Ofensores (NC e NCG)")
     
-    # Lógica para extrair e contar erros do JSON
     if 'detalhes' in df_filtrado.columns:
         erros_dict = {}
         for _, row in df_filtrado.iterrows():
             detalhes = row['detalhes']
             if isinstance(detalhes, dict):
                 for criterio, status in detalhes.items():
-                    if status in ["NC", "NCG"]: # Conta apenas Não Conformidades
+                    if status in ["NC", "NC Grave"]:
                         erros_dict[criterio] = erros_dict.get(criterio, 0) + 1
         
         if erros_dict:
-            # Cria DataFrame para o gráfico
             df_erros = pd.DataFrame(list(erros_dict.items()), columns=['Critério', 'Ocorrências'])
             df_erros = df_erros.sort_values(by='Ocorrências', ascending=True)
 
             fig_pareto = px.bar(
-                df_erros, 
-                x='Ocorrências', 
-                y='Critério', 
-                orientation='h',
-                text='Ocorrências',
-                color_discrete_sequence=['#ff4b4b'] # Vermelho para indicar erro
+                df_erros, x='Ocorrências', y='Critério', orientation='h',
+                text='Ocorrências', color_discrete_sequence=['#ff4b4b']
             )
-            fig_pareto.update_layout(
-                paper_bgcolor='rgba(0,0,0,0)', 
-                plot_bgcolor='rgba(0,0,0,0)', 
-                font={'color': "white"},
-                xaxis_title="Quantidade de Erros",
-                yaxis_title=""
-            )
+            fig_pareto.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font={'color': "white"})
             st.plotly_chart(fig_pareto, use_container_width=True)
         else:
-            st.success("🎉 Nenhum erro encontrado no período selecionado!")
+            st.success("🎉 Nenhum erro encontrado!")
 
     # --- 6. GRÁFICO DE EVOLUÇÃO ---
     st.write("##")
     fig_evolucao = px.area(
         df_filtrado, x='criado_em', y='nota', 
-        markers=True, title="Evolução das Notas",
+        markers=True, title="Evolução das Notas no Tempo",
         labels={'criado_em': 'Data', 'nota': 'Nota (%)'},
         color_discrete_sequence=['#1f77b4']
     )
     fig_evolucao.update_yaxes(range=[0, 105])
     fig_evolucao.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font={'color': "white"})
     st.plotly_chart(fig_evolucao, use_container_width=True)
+
+    # Ranking completo em tabela
+    if nivel_usuario in ["ADMIN", "GESTAO"] and sdr_escolhido == "Ver Todos":
+        st.write("##")
+        st.subheader("📊 Ranking Completo (Prioridade: Volume)")
+        st.dataframe(
+            ranking,
+            column_config={
+                "sdr": "Colaborador",
+                "qtd_mon": st.column_config.NumberColumn("Qtd. Monitorias", format="%d 📊"),
+                "nota_media": st.column_config.NumberColumn("Média de Qualidade", format="%.2f%%")
+            },
+            hide_index=True,
+            use_container_width=True
+        )

@@ -1,15 +1,17 @@
 import streamlit as st
 import pandas as pd
-from database import get_criterios_ativos, save_monitoria, supabase
+import time
+# IMPORTANTE: Garante que estamos chamando a função nova do database.py
+from database import get_criterios_ativos, salvar_monitoria_auditada, supabase
 
 def render_nova_monitoria():
     st.title("📝 Nova Monitoria")
     st.markdown("Preencha o checklist abaixo. Lembre-se: **NC Grave zera a nota automaticamente.**")
     
-    # 1. Busca os dados necessários
+    # 1. Busca os dados necessários (Critérios)
     df_criterios = get_criterios_ativos()
     
-    # Busca lista de SDRs
+    # 2. Busca lista de SDRs ativos para o Selectbox
     try:
         response = supabase.table("usuarios").select("nome").eq("nivel", "SDR").eq("esta_ativo", True).order("nome").execute()
         lista_sdrs = [u['nome'] for u in response.data] if response.data else []
@@ -22,25 +24,25 @@ def render_nova_monitoria():
         return
 
     # --- INÍCIO DO FORMULÁRIO ---
+    # clear_on_submit=True garante que, após salvar com sucesso, os campos limpem
     with st.form("form_monitoria_dinamica", clear_on_submit=True):
         
-        # BLOC 1: IDENTIFICAÇÃO (Em um container para destaque)
+        # BLOCO 1: IDENTIFICAÇÃO
         with st.container(border=True):
             st.markdown("### 👤 Identificação")
             col_sdr, col_link1, col_link2 = st.columns([2, 1.5, 1.5])
             
             sdr_escolhido = col_sdr.selectbox("Colaborador (SDR)", options=["Selecione..."] + lista_sdrs)
-            link_selene = col_link1.text_input("Link da Conversa", placeholder="URL...")
-            link_nectar = col_link2.text_input("Link do CRM", placeholder="URL...")
+            link_selene = col_link1.text_input("Link da Conversa", placeholder="URL da gravação...")
+            link_nectar = col_link2.text_input("Link do CRM", placeholder="URL do card...")
 
-        st.markdown("<br>", unsafe_allow_html=True) # Espaço visual
+        st.markdown("<br>", unsafe_allow_html=True) 
 
-        # BLOCO 2: AVALIAÇÃO (Checklist)
+        # BLOCO 2: AVALIAÇÃO (Checklist Dinâmico)
         respostas = {}
         grupos = df_criterios['grupo'].unique()
         
         for grupo in grupos:
-            # Expander aberto por padrão para facilitar a leitura rápida
             with st.expander(f"📂 {grupo}", expanded=True):
                 itens = df_criterios[df_criterios['grupo'] == grupo]
                 
@@ -53,10 +55,10 @@ def render_nova_monitoria():
                     col_pergunta.markdown(f"**{nome_c}**")
                     col_pergunta.caption(f"Peso: {peso_c}")
                     
-                    # Rádio horizontal para agilidade
+                    # Criação dos Radio Buttons
                     respostas[nome_c] = {
                         "valor": col_resposta.radio(
-                            f"Avaliação para {nome_c}", # Label invisível (hidden) por acessibilidade
+                            f"Avaliação para {nome_c}", 
                             options=["C", "NC", "NC Grave", "NSA"],
                             index=0,
                             horizontal=True,
@@ -68,24 +70,24 @@ def render_nova_monitoria():
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # BLOCO 3: CONCLUSÃO
+        # BLOCO 3: CONCLUSÃO E FEEDBACK
         with st.container(border=True):
             st.markdown("### ✍️ Feedback Final")
             observacoes = st.text_area(
-                "Escreva os pontos positivos e de melhoria:", 
-                placeholder="Este feedback aparecerá para o SDR na tela de 'Meus Resultados'...",
+                "Observações Gerais:", 
+                placeholder="Escreva aqui os pontos positivos e de melhoria. O SDR verá isso.",
                 height=150
             )
 
-        # BOTÃO DE AÇÃO
+        # BOTÃO DE ENVIO
         col_submit, _ = st.columns([1, 2])
         submitted = col_submit.form_submit_button("🚀 Finalizar Monitoria", use_container_width=True, type="primary")
 
-        # --- LÓGICA DE SALVAMENTO ---
+        # --- LÓGICA DE PROCESSAMENTO ---
         if submitted:
-            # 1. Validação Básica
+            # 1. Validação de Campo Obrigatório
             if sdr_escolhido == "Selecione...":
-                st.error("❌ Por favor, selecione um SDR.")
+                st.error("❌ Erro: Você deve selecionar um Colaborador (SDR).")
                 st.stop()
             
             # 2. Cálculo da Nota
@@ -102,46 +104,58 @@ def render_nova_monitoria():
                     tem_nc_grave = True
                     falhas_graves.append(nome)
                 
+                # C = Soma tudo
                 if resp == "C":
                     total_obtido += peso
                     total_possivel += peso
+                # NC ou NC Grave = Soma só no possível (para reduzir a média)
                 elif resp in ["NC", "NC Grave"]:
                     total_possivel += peso
-                # NSA não soma no 'total_possivel', então não penaliza a média
+                # NSA = Não soma em nada (neutro)
 
-            # Regra de Ouro: NC Grave zera tudo
+            # Regra: NC Grave zera a nota instantaneamente
             if tem_nc_grave:
                 nota_final = 0.0
             else:
                 nota_final = (total_obtido / total_possivel * 100) if total_possivel > 0 else 100.0
 
-            # 3. Prepara o Payload para o Banco
+            # 3. Preparação dos Dados (Payload)
             payload = {
                 "sdr": sdr_escolhido,
                 "nota": round(nota_final, 2),
                 "link_selene": link_selene,
                 "link_nectar": link_nectar,
                 "observacoes": observacoes,
+                # Pega o nome do admin logado ou usa 'Admin' como fallback
                 "monitor_responsavel": st.session_state.get('user_nome', 'Admin'),
-                "detalhes": {n: i["valor"] for n, i in respostas.items()} # Salva o JSON das respostas
+                # Salva o dicionário de respostas detalhado
+                "detalhes": {n: i["valor"] for n, i in respostas.items()}
             }
 
-            try:
-                save_monitoria(payload)
-                
-                # 4. Feedback Visual de Sucesso
+            # 4. Envio Seguro (Chama database.py)
+            sucesso, msg = salvar_monitoria_auditada(payload)
+            
+            if sucesso:
+                # Feedback Visual
                 if tem_nc_grave:
-                    st.error(f"🚨 NOTA ZERO APLICADA! Falha Grave em: {', '.join(falhas_graves)}")
+                    st.error(f"🚨 NOTA ZERO APLICADA! Motivo: Falha Grave em '{', '.join(falhas_graves)}'")
                 else:
-                    cor_nota = "#00cc96" if nota_final >= 90 else "#ffa500" if nota_final >= 70 else "#ff4b4b"
+                    # Define a cor do card baseada na nota
+                    if nota_final >= 90: cor = "#00cc96" # Verde
+                    elif nota_final >= 70: cor = "#ffa500" # Laranja
+                    else: cor = "#ff4b4b" # Vermelho
+
                     st.markdown(f"""
-                        <div style="background-color: {cor_nota}20; border: 2px solid {cor_nota}; padding: 20px; border-radius: 10px; text-align: center; margin-top: 20px;">
-                            <h2 style="color: {cor_nota}; margin:0;">Monitoria Salva com Sucesso!</h2>
+                        <div style="background-color: {cor}20; border: 2px solid {cor}; padding: 20px; border-radius: 10px; text-align: center; margin-top: 20px;">
+                            <h2 style="color: {cor}; margin:0;">Monitoria Registrada!</h2>
                             <h1 style="font-size: 50px; color: white; margin: 10px 0;">{nota_final:.1f}%</h1>
-                            <p style="color: #ccc;">O SDR {sdr_escolhido} já pode visualizar este resultado.</p>
+                            <p style="color: #ccc;">Monitor: {st.session_state.get('user_nome')}</p>
                         </div>
                     """, unsafe_allow_html=True)
                     st.balloons()
-                
-            except Exception as e:
-                st.error(f"Erro técnico ao salvar: {e}")
+                    
+                    # Opcional: Pausa breve para leitura antes de limpar (devido ao clear_on_submit)
+                    time.sleep(3)
+                    st.rerun()
+            else:
+                st.error(f"❌ Falha técnica ao salvar: {msg}")

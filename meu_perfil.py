@@ -1,112 +1,128 @@
 import streamlit as st
-from database import supabase, registrar_auditoria
 import hashlib
 import re
 import time
+from database import supabase, registrar_auditoria
 
 def hash_password(password):
-    """Gera o hash SHA-256 para comparação segura de senhas."""
-    return hashlib.sha256(str.encode(password)).hexdigest()
+    """Gera o hash SHA-256 da senha."""
+    return hashlib.sha256(str.encode(password.strip())).hexdigest()
 
 def limpar_nome_arquivo(nome):
-    """Remove caracteres especiais para evitar erros de URL no Storage do Supabase."""
     nome_limpo = re.sub(r'[^a-zA-Z0-9]', '_', nome)
     return nome_limpo.lower()
 
 def render_meu_perfil():
     st.title("👤 Meu Perfil")
     
-    # Usamos o login (user) como chave primária para busca, pois o nome pode ter duplicatas
-    user_nome_exibicao = st.session_state.get('user_nome')
-    user_login = st.session_state.get('user_login') # Deve estar no session_state no login
-    nivel = st.session_state.get('nivel')
+    # 1. Recupera sessão e limpa espaços
+    user_login = st.session_state.get('user_login', '').strip()
+    
+    # --- DIAGNÓSTICO VISUAL (Pode remover depois) ---
+    # st.write(f"Login da Sessão: `{user_login}`")
+    
+    if not user_login:
+        st.error("Sessão inválida. Faça login novamente.")
+        return
 
-    # Busca dados atuais do usuário logado
+    # 2. Busca no banco (Usando ILIKE para ignorar maiúsculas/minúsculas)
     try:
-        # Busca pela coluna 'user' (e-mail) que é única
-        res = supabase.table("usuarios").select("*").eq("user", user_login).single().execute()
-        user_info = res.data if res.data else {}
-        foto_atual = user_info.get('foto_url')
-    except Exception as e:
-        st.error(f"Erro ao carregar dados do perfil: {e}")
-        user_info, foto_atual = {}, None
-
-    # --- SEÇÃO 1: FOTO DE PERFIL ---
-    st.subheader("🖼️ Foto de Perfil")
-    with st.container(border=True):
-        arquivo_foto = st.file_uploader("Alterar foto (PNG ou JPG)", type=['png', 'jpg', 'jpeg'])
+        # Tenta buscar ignorando case sensitive
+        res = supabase.table("usuarios").select("*").ilike("user", user_login).execute()
         
-        if arquivo_foto:
-            # PRÉVIA
-            st.markdown("<p style='text-align: center; color: #ff4b4b;'><b>Prévia da nova foto:</b></p>", unsafe_allow_html=True)
-            st.image(arquivo_foto, width=150)
+        if res.data and len(res.data) > 0:
+            user_info = res.data[0]
+            foto_atual = user_info.get('foto_url')
+            senha_banco = user_info.get('senha') # No seu print a coluna é 'senha'
             
-            if st.button("✅ Confirmar e Salvar Nova Foto", type="primary", use_container_width=True):
+            user_nome_exibicao = user_info.get('nome', 'Usuário')
+            nivel = user_info.get('nivel')
+            esta_ativo = user_info.get('esta_ativo')
+        else:
+            st.warning(f"⚠️ Usuário não encontrado no banco.")
+            st.markdown(f"O sistema buscou por: **{user_login}** na coluna **user**.")
+            st.markdown("Sugestão: Verifique no Supabase se o RLS (Row Level Security) está desativado.")
+            return
+
+    except Exception as e:
+        st.error(f"Erro de conexão: {e}")
+        return
+
+    # --- TELA DE PERFIL ---
+
+    # FOTO
+    st.subheader("🖼️ Foto")
+    with st.container(border=True):
+        c_img, c_up = st.columns([1, 3])
+        with c_img:
+            if foto_atual:
+                st.image(foto_atual, width=100)
+            else:
+                st.markdown("👤")
+        with c_up:
+            novo_arquivo = st.file_uploader("Trocar foto", type=['png', 'jpg'])
+            if novo_arquivo and st.button("Salvar Foto"):
                 try:
-                    ext = arquivo_foto.name.split('.')[-1]
-                    # Nome do arquivo baseado no login para ser único
-                    nome_base = limpar_nome_arquivo(user_login.split('@')[0])
-                    file_path = f"avatar_{nome_base}.{ext}"
-                    
-                    # Upload para o Bucket 'avatars' (certifique-se que o bucket é público no Supabase)
+                    ext = novo_arquivo.name.split('.')[-1]
+                    nome_arq = limpar_nome_arquivo(user_login.split('@')[0]) + f".{ext}"
                     supabase.storage.from_("avatars").upload(
-                        path=file_path, 
-                        file=arquivo_foto.getvalue(), 
+                        path=nome_arq, file=novo_arquivo.getvalue(), 
                         file_options={"upsert": "true", "content-type": f"image/{ext}"}
                     )
-                    
-                    # Gera URL Pública
-                    url_nova = supabase.storage.from_("avatars").get_public_url(file_path)
-                    
-                    # Atualiza o campo foto_url na tabela de usuários
-                    supabase.table("usuarios").update({"foto_url": url_nova}).eq("user", user_login).execute()
-                    
-                    st.success("Foto atualizada com sucesso!")
-                    time.sleep(1.5)
+                    url = supabase.storage.from_("avatars").get_public_url(nome_arq)
+                    supabase.table("usuarios").update({"foto_url": url}).eq("id", user_info['id']).execute()
+                    st.success("Foto salva!")
+                    time.sleep(1)
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Falha ao processar imagem: {e}")
-        
-        elif foto_atual:
-            st.markdown(f"""
-                <div style="display: flex; flex-direction: column; align-items: center; padding: 10px;">
-                    <img src="{foto_atual}" style="width: 150px; height: 150px; border-radius: 50%; object-fit: cover; border: 3px solid #ff4b4b;">
-                    <p style="color: gray; margin-top: 10px;">Foto atual do perfil</p>
-                </div>
-            """, unsafe_allow_html=True)
+                    st.error(f"Erro: {e}")
 
-    # --- SEÇÃO 2: DADOS ---
-    st.subheader("📋 Informações da Conta")
+    # DADOS
+    st.subheader("📋 Dados")
     with st.container(border=True):
         c1, c2 = st.columns(2)
         c1.write(f"**Nome:** {user_nome_exibicao}")
-        c1.write(f"**E-mail:** {user_login}")
-        c2.write(f"**Nível de Acesso:** {nivel}")
-        c2.write(f"**Status:** ✅ Ativo")
+        c1.write(f"**Login:** {user_login}")
+        c2.write(f"**Nível:** {nivel}")
+        c2.write(f"**Status:** {'✅ Ativo' if esta_ativo else '❌ Inativo'}")
 
-    # --- SEÇÃO 3: TROCA DE SENHA ---
+    # TROCA DE SENHA (COM CORREÇÃO PARA SENHA ANTIGA)
     st.subheader("🔐 Alterar Senha")
-    with st.form("form_senha", border=True):
-        st.info("Para sua segurança, a nova senha deve ser diferente da atual.")
+    with st.form("frm_senha", clear_on_submit=True):
         s_atual = st.text_input("Senha Atual", type="password")
-        col_s1, col_s2 = st.columns(2)
-        s_nova = col_s1.text_input("Nova Senha", type="password")
-        s_conf = col_s2.text_input("Confirme a Nova Senha", type="password")
+        s_nova = st.text_input("Nova Senha", type="password")
+        s_conf = st.text_input("Confirmar Nova Senha", type="password")
         
-        if st.form_submit_button("Atualizar Minha Senha", use_container_width=True):
+        if st.form_submit_button("Atualizar"):
             if not s_atual or not s_nova:
-                st.error("Preencha todos os campos de senha.")
+                st.error("Preencha tudo.")
             elif s_nova != s_conf:
-                st.error("As novas senhas digitadas não coincidem.")
-            elif len(s_nova) < 6:
-                st.error("A nova senha deve ter pelo menos 6 caracteres.")
-            elif hash_password(s_atual) != user_info.get('senha'):
-                st.error("A 'Senha Atual' digitada está incorreta.")
+                st.error("Senhas novas não batem.")
             else:
-                try:
-                    # Atualiza com o novo HASH
-                    supabase.table("usuarios").update({"senha": hash_password(s_nova)}).eq("user", user_login).execute()
-                    registrar_auditoria("ALT_SENHA", user_nome_exibicao, "Usuário alterou a própria senha via perfil.")
-                    st.success("Senha alterada com sucesso!")
-                except Exception as e:
-                    st.error(f"Erro ao atualizar senha: {e}")
+                # --- LÓGICA HÍBRIDA (IMPORTANTE) ---
+                # 1. Calcula o hash do que foi digitado
+                hash_digitado = hash_password(s_atual)
+                
+                # 2. Verifica: É igual ao hash? OU É igual ao texto puro (senha antiga)?
+                senha_correta = False
+                
+                # Teste 1: Senha já está criptografada no banco?
+                if hash_digitado == senha_banco:
+                    senha_correta = True
+                # Teste 2: Senha no banco é antiga (texto puro 1915...)?
+                elif s_atual.strip() == senha_banco:
+                    senha_correta = True
+                    st.info("Detectamos que sua senha era antiga. Atualizando criptografia...")
+
+                if senha_correta:
+                    # Salva a nova já como Hash
+                    novo_hash = hash_password(s_nova)
+                    supabase.table("usuarios").update({"senha": novo_hash}).eq("id", user_info['id']).execute()
+                    
+                    registrar_auditoria("ALT_SENHA", user_nome_exibicao, "Trocou a senha.")
+                    st.success("Senha atualizada e protegida!")
+                    st.balloons()
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("Senha atual incorreta.")

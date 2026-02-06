@@ -1,86 +1,101 @@
 import streamlit as st
-from datetime import datetime
 import pandas as pd
-from database import supabase
+from datetime import datetime
+
+# IMPORTAÇÃO CORRETA: Usando a função com cache
+from database import get_all_records_db
 
 def render_auditoria():
     # 1. Trava de Segurança
-    # Garante que apenas usuários com nível ADMIN acessem esta área sensível
     if st.session_state.get('nivel') != "ADMIN":
-        st.error("Acesso negado. Apenas administradores podem visualizar os logs do sistema.")
+        st.error("🔒 Acesso negado. Apenas administradores podem visualizar os logs.")
         return
 
     st.title("🕵️ Painel de Auditoria")
-    st.markdown("Acompanhe todas as ações críticas realizadas no sistema para garantir a integridade dos dados.")
+    st.markdown("Rastreamento de ações sensíveis (Login, Monitorias, Exclusões, Alterações de Senha).")
+
+    # 2. Botão de Atualização (Necessário por causa do Cache)
+    if st.button("🔄 Atualizar Logs Agora"):
+        get_all_records_db.clear()
+        st.rerun()
 
     try:
-        # 2. Busca os dados da tabela auditoria ordenados por data
-        res = supabase.table("auditoria").select("*").order("criado_em", desc=True).execute()
+        # 3. Busca os dados usando a função centralizada
+        df = get_all_records_db("auditoria")
         
-        if res.data:
-            df = pd.DataFrame(res.data)
+        if df is not None and not df.empty:
+            # Tratamento de Data (Prioriza data_evento, fall back para criado_em)
+            coluna_data = 'data_evento' if 'data_evento' in df.columns else 'criado_em'
+            
+            # Converte para datetime para ordenar corretamente
+            df[coluna_data] = pd.to_datetime(df[coluna_data])
+            df = df.sort_values(by=coluna_data, ascending=False)
+            
+            # Cria coluna formatada para exibição (BR)
+            df['Data_Formatada'] = df[coluna_data].dt.strftime('%d/%m/%Y %H:%M:%S')
 
-            # 3. Tratamento de Data com Pandas
-            df['criado_em'] = pd.to_datetime(df['criado_em'])
-            df['📅 Data/Hora'] = df['criado_em'].dt.strftime('%d/%m/%Y %H:%M:%S')
-
-            # 4. Filtros Dinâmicos no Topo
+            # 4. Filtros Dinâmicos
             with st.expander("🔍 Filtros Avançados", expanded=True):
                 c1, c2, c3 = st.columns(3)
                 
-                # Filtro por Responsável (Executor)
-                admins = ["Todos"] + sorted(df['admin_responsavel'].unique().tolist())
-                admin_sel = c1.selectbox("Quem realizou a ação:", admins)
+                # Filtro: Quem fez?
+                admins = ["Todos"] + sorted(df['admin_responsavel'].astype(str).unique().tolist())
+                admin_sel = c1.selectbox("Executor (Admin):", admins)
                 
-                # Filtro por Tipo de Ação
-                acoes = ["Todas"] + sorted(df['acao'].unique().tolist())
+                # Filtro: O que fez?
+                acoes = ["Todas"] + sorted(df['acao'].astype(str).unique().tolist())
                 acao_sel = c2.selectbox("Tipo de Ação:", acoes)
                 
-                # Filtro por Colaborador Afetado (Alvo)
-                afetados = ["Todos"] + sorted(df['colaborador_afetado'].dropna().unique().tolist())
-                afetado_sel = c3.selectbox("Colaborador afetado:", afetados)
+                # Filtro: Quem sofreu a ação?
+                # Tratamento para remover valores nulos/None antes de ordenar
+                lista_afetados = df['colaborador_afetado'].dropna().astype(str).unique().tolist()
+                afetados = ["Todos"] + sorted(lista_afetados)
+                afetado_sel = c3.selectbox("Colaborador Alvo:", afetados)
 
-            # 5. Aplicação Lógica dos Filtros
+            # 5. Aplicação dos Filtros
             df_filt = df.copy()
+            
             if admin_sel != "Todos":
                 df_filt = df_filt[df_filt['admin_responsavel'] == admin_sel]
+            
             if acao_sel != "Todas":
                 df_filt = df_filt[df_filt['acao'] == acao_sel]
+            
             if afetado_sel != "Todos":
                 df_filt = df_filt[df_filt['colaborador_afetado'] == afetado_sel]
 
-            # 6. Exibição da Tabela Formatada
+            # 6. Exibição da Tabela
             st.divider()
-            st.subheader(f"Registros Encontrados ({len(df_filt)})")
+            st.markdown(f"**Registros encontrados:** `{len(df_filt)}`")
             
-            # Preparação da visualização amigável
-            df_view = df_filt[['📅 Data/Hora', 'admin_responsavel', 'acao', 'colaborador_afetado', 'detalhes']]
-            df_view.columns = ['Data/Hora', 'Executor', 'Ação', 'Alvo', 'Detalhes']
+            # Prepara colunas para exibição limpa
+            df_view = df_filt[['Data_Formatada', 'acao', 'admin_responsavel', 'colaborador_afetado', 'detalhes']].copy()
+            df_view.columns = ['Data/Hora', 'Ação', 'Executor', 'Alvo', 'Detalhes']
 
-            # Renderização com controle de largura de colunas
             st.dataframe(
                 df_view,
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "Detalhes": st.column_config.TextColumn("Detalhes da Operação", width="large"),
-                    "Data/Hora": st.column_config.TextColumn("Momento", width="medium"),
-                    "Ação": st.column_config.TextColumn("Tipo"),
-                    "Executor": st.column_config.TextColumn("Admin Responsável")
+                    "Data/Hora": st.column_config.TextColumn("Horário (BR)", width="medium"),
+                    "Ação": st.column_config.TextColumn("Ação", width="medium"),
+                    "Executor": st.column_config.TextColumn("Resp.", width="small"),
+                    "Alvo": st.column_config.TextColumn("Afetado", width="small"),
+                    "Detalhes": st.column_config.TextColumn("Descrição Completa", width="large"),
                 }
             )
 
-            # 7. Opção de Exportação para Conformidade
+            # 7. Exportação CSV
+            csv = df_view.to_csv(index=False).encode('utf-8')
             st.download_button(
-                label="📥 Exportar Logs para CSV",
-                data=df_view.to_csv(index=False).encode('utf-8'),
-                file_name=f'auditoria_acelera_{datetime.now().strftime("%Y%m%d")}.csv',
-                mime='text/csv',
-                help="Baixe os logs filtrados para arquivamento ou análise externa."
+                label="📥 Baixar Relatório (CSV)",
+                data=csv,
+                file_name=f'auditoria_log_{datetime.now().strftime("%Y%m%d_%H%M")}.csv',
+                mime='text/csv'
             )
 
         else:
-            st.info("Nenhum registro de auditoria encontrado até o momento.")
+            st.info("📭 Nenhum registro de auditoria encontrado.")
 
     except Exception as e:
-        st.error(f"Erro técnico ao carregar os logs de auditoria: {e}")
+        st.error(f"Erro ao carregar logs: {e}")
