@@ -20,17 +20,16 @@ from relatorios import render_relatorios
 from gestao_criterios import render_gestao_criterios 
 from style import apply_custom_styles
 
-# --- CORREÇÃO AQUI: Importando a função nova do database.py ---
 from database import (
     get_all_records_db, 
     supabase, 
     buscar_contagem_notificacoes, 
     limpar_todas_notificacoes, 
-    anular_monitoria_auditada  # <--- Nome correto aqui
+    anular_monitoria_auditada
 )
 
 # ==========================================================
-# 🛑 MODAL DE CONFIRMAÇÃO DE ANULAÇÃO
+# 🛑 MODAL DE CONFIRMAÇÃO DE ANULAÇÃO (CORRIGIDO)
 # ==========================================================
 @st.dialog("🗑️ Confirmar Anulação")
 def modal_anular(id_mon, sdr_nome):
@@ -48,8 +47,12 @@ def modal_anular(id_mon, sdr_nome):
         if not motivo or len(motivo) < 5:
             st.error("Escreva um motivo válido (min. 5 letras).")
         else:
-            # --- CORREÇÃO AQUI: Chamando a função auditada ---
-            sucesso, msg = anular_monitoria_auditada(id_mon, motivo)
+            # --- PEGA QUEM ESTÁ LOGADO (EX: DANIEL) ---
+            quem_esta_logado = st.session_state.get('user_nome', 'Admin Desconhecido')
+
+            # --- ENVIA OS 3 PARÂMETROS ---
+            sucesso, msg = anular_monitoria_auditada(id_mon, motivo, quem_esta_logado)
+            
             if sucesso:
                 st.success("Registro removido e auditado!")
                 time.sleep(1.0)
@@ -149,15 +152,17 @@ def main():
 
         if cookie_user and str(cookie_user).strip() != "":
             try:
-                res = supabase.table("usuarios").select("*").eq("user", cookie_user).single().execute()
-                if res.data and res.data.get('esta_ativo', True):
-                    user_data = res.data
-                    st.session_state.authenticated = True
-                    st.session_state.user_nome = user_data.get('nome')
-                    st.session_state.user_login = user_data['user']
-                    st.session_state.nivel = str(user_data.get('nivel', 'SDR')).upper()
-                    st.session_state.foto_url = user_data.get('foto_url')
-                    st.rerun() 
+                # Usa ILIKE para evitar erros de login salvo em maiúsculo/minúsculo
+                res = supabase.table("usuarios").select("*").ilike("user", cookie_user).execute()
+                if res.data and len(res.data) > 0:
+                    user_data = res.data[0]
+                    if user_data.get('esta_ativo', True):
+                        st.session_state.authenticated = True
+                        st.session_state.user_nome = user_data.get('nome')
+                        st.session_state.user_login = user_data['user']
+                        st.session_state.nivel = str(user_data.get('nivel', 'SDR')).upper()
+                        st.session_state.foto_url = user_data.get('foto_url')
+                        st.rerun() 
             except Exception: pass
 
     if not st.session_state.authenticated:
@@ -215,7 +220,7 @@ def main():
             menu_btn("NOVA MONITORIA", "MONITORIA")
             menu_btn("CONFIG. CRITÉRIOS", "CONFIG_CRITERIOS")
             menu_btn("GESTAO DE EQUIPE", "GESTAO_USUARIOS")
-            menu_btn("AUDITORIA", "AUDITORIA")
+            menu_btn("AUDITORIA", "AUDITORIA") # <-- Botão adicionado e roteamento corrigido
 
         st.divider()
         if st.button("Sair", use_container_width=True):
@@ -224,7 +229,7 @@ def main():
             cookie_manager.set('user_token', "", expires_at=datetime.now() - timedelta(days=1))
             st.rerun()
 
-    # --- ROTEAMENTO ---
+    # --- ROTEAMENTO FINAL ---
     page = st.session_state.current_page
     try:
         if page == "DASHBOARD": render_dashboard()

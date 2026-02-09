@@ -56,54 +56,54 @@ def get_criterios_ativos():
 # 🕵️ SISTEMA CENTRAL DE AUDITORIA (LOG COMPLETO)
 # ==========================================================
 
-
-# No arquivo database.py, procure ou adicione esta função:
-
 def registrar_auditoria(acao, admin_nome, detalhes, afetado=None):
     """
     Registra uma ação no banco de dados para segurança e rastreio.
     """
     try:
-        # Pega a hora certa de Brasília
         fuso_br = pytz.timezone('America/Sao_Paulo')
         hora_agora = datetime.now(fuso_br).isoformat()
         
         payload = {
             "data_evento": hora_agora,
             "acao": acao,
-            "admin_responsavel": admin_nome,  # Tem que bater com o SQL
+            "admin_responsavel": admin_nome,
             "detalhes": detalhes,
             "colaborador_afetado": afetado or "N/A"
         }
         
-        # Tenta inserir
-        res = supabase.table("auditoria").insert(payload).execute()
-        
-        # Limpa o cache para que o painel mostre o dado novo imediatamente
+        supabase.table("auditoria").insert(payload).execute()
         get_all_records_db.clear()
         
         return True
     except Exception as e:
-        # Se der erro, ele vai aparecer no seu terminal do VS Code
         print(f"❌ ERRO CRÍTICO AO SALVAR AUDITORIA: {e}")
         return False
-
 
 # ==========================================================
 # 📝 MONITORIAS & NOTIFICAÇÕES
 # ==========================================================
 
 def salvar_monitoria_auditada(dados):
-    """Salva monitoria, força data de Brasília e registra auditoria."""
+    """Salva monitoria e registra auditoria com Responsável e Afetado corretos."""
     try:
         hora_br = obter_hora_brasil()
         dados['visualizada'] = False 
-        dados['criado_em'] = hora_br # Força hora certa no banco
+        dados['criado_em'] = hora_br 
         
-        response = supabase.table("monitorias").insert(dados).execute()
+        supabase.table("monitorias").insert(dados).execute()
         get_all_records_db.clear()
         
-        registrar_auditoria("MONITORIA REALIZADA", dados.get('sdr'), f"Nota: {dados.get('nota')}%")
+        # AJUSTE: O responsável é o monitor, o afetado é o SDR
+        monitor = dados.get('monitor_responsavel', 'Sistema')
+        sdr_alvo = dados.get('sdr', 'N/A')
+        
+        registrar_auditoria(
+            acao="MONITORIA REALIZADA", 
+            admin_nome=monitor, 
+            detalhes=f"Nota: {dados.get('nota')}%", 
+            afetado=sdr_alvo
+        )
         return True, "Monitoria salva com sucesso!"
     except Exception as e:
         return False, f"Erro ao salvar monitoria: {str(e)}"
@@ -140,9 +140,8 @@ def limpar_todas_notificacoes(nome_usuario):
 # ==========================================================
 
 def criar_usuario_auditado(dados):
-    """Cria usuário, valida duplicidade e gera log."""
+    """Cria usuário e registra quem foi o administrador responsável."""
     try:
-        # Verifica duplicidade
         res = supabase.table("usuarios").select("user").eq("user", dados['user']).execute()
         if res.data:
             return False, "E-mail/Usuário já cadastrado."
@@ -150,7 +149,15 @@ def criar_usuario_auditado(dados):
         dados['criado_em'] = obter_hora_brasil()
         supabase.table("usuarios").insert(dados).execute()
         
-        registrar_auditoria("CRIOU USUÁRIO", dados['nome'], f"Login: {dados['user']} | Nível: {dados['nivel']}")
+        # AJUSTE: Pegar o nome do admin logado da sessão
+        admin_logado = st.session_state.get('user_nome', 'Admin')
+        
+        registrar_auditoria(
+            acao="CRIOU USUÁRIO", 
+            admin_nome=admin_logado, 
+            detalhes=f"Login: {dados['user']} | Nível: {dados['nivel']}",
+            afetado=dados['nome']
+        )
         return True, "Usuário criado com sucesso!"
     except Exception as e:
         return False, str(e)
@@ -160,7 +167,9 @@ def editar_usuario_auditado(user_login, dados_novos):
     try:
         supabase.table("usuarios").update(dados_novos).eq("user", user_login).execute()
         campos_alterados = ", ".join(dados_novos.keys())
-        registrar_auditoria("EDITOU PERFIL", user_login, f"Campos alterados: {campos_alterados}")
+        admin_logado = st.session_state.get('user_nome', user_login)
+        
+        registrar_auditoria("EDITOU PERFIL", admin_logado, f"Campos alterados: {campos_alterados}", afetado=user_login)
         get_all_records_db.clear()
         return True, "Alterações salvas!"
     except Exception as e:
@@ -169,10 +178,11 @@ def editar_usuario_auditado(user_login, dados_novos):
 def trocar_senha_auditado(user_login, nova_senha_hash, eh_admin=False):
     """Atualiza senha e identifica se foi reset de Admin ou troca própria."""
     try:
-        supabase.table("usuarios").update({"password": nova_senha_hash}).eq("user", user_login).execute()
+        supabase.table("usuarios").update({"senha": nova_senha_hash}).eq("user", user_login).execute()
+        admin_logado = st.session_state.get('user_nome', user_login)
         
         acao = "ALTEROU SENHA (ADMIN)" if eh_admin else "ALTEROU PRÓPRIA SENHA"
-        registrar_auditoria(acao, user_login, "Senha atualizada com sucesso.")
+        registrar_auditoria(acao, admin_logado, "Senha atualizada com sucesso.", afetado=user_login)
         return True, "Senha atualizada!"
     except Exception as e:
         return False, str(e)
@@ -181,31 +191,24 @@ def trocar_senha_auditado(user_login, nova_senha_hash, eh_admin=False):
 # 🗑️ ANULAÇÃO & CONTESTAÇÃO (AUDITADO)
 # ==========================================================
 
-def anular_monitoria_auditada(id_monitoria, motivo):
-    """Remove monitoria em cascata e gera log detalhado."""
+def anular_monitoria_auditada(id_monitoria, motivo, nome_responsavel):
+    """Remove monitoria em cascata e registra o Admin responsável."""
     try:
         res_mon = supabase.table("monitorias").select("*").eq("id", id_monitoria).single().execute()
         if not res_mon.data: return False, "Monitoria não encontrada."
         
-        sdr_afetado = res_mon.data.get('sdr')
+        sdr_afetado = res_mon.data.get('sdr', 'N/A')
 
-        # Deleta contestações primeiro (Foreign Key)
         supabase.table("contestacoes").delete().eq("monitoria_id", id_monitoria).execute()
-        # Deleta a monitoria
         supabase.table("monitorias").delete().eq("id", id_monitoria).execute()
         
-        registrar_auditoria("ANULOU MONITORIA", sdr_afetado, f"ID: {id_monitoria} | Motivo: {motivo}")
+        registrar_auditoria(
+            acao="ANULAR_MONITORIA", 
+            admin_nome=nome_responsavel, 
+            detalhes=f"ID: {id_monitoria} | Motivo: {motivo}", 
+            afetado=sdr_afetado
+        )
         return True, "Anulada com sucesso."
-    except Exception as e:
-        return False, str(e)
-
-def abrir_contestacao_auditada(payload):
-    """SDR abre contestação."""
-    try:
-        payload['criado_em'] = obter_hora_brasil()
-        supabase.table("contestacoes").insert(payload).execute()
-        registrar_auditoria("ABRIU CONTESTAÇÃO", payload['sdr_nome'], f"Monitoria ID: {payload['monitoria_id']}")
-        return True, "Contestação enviada!"
     except Exception as e:
         return False, str(e)
 
@@ -218,8 +221,15 @@ def responder_contestacao_auditada(id_cont, status, obs_admin, sdr_alvo):
             "data_resolucao": obter_hora_brasil(),
             "visualizada": False
         }
+        admin_logado = st.session_state.get('user_nome', 'Admin')
         supabase.table("contestacoes").update(payload).eq("id", id_cont).execute()
-        registrar_auditoria(f"JULGOU CONTESTAÇÃO ({status})", sdr_alvo, f"ID: {id_cont}")
+        
+        registrar_auditoria(
+            acao=f"JULGOU CONTESTAÇÃO ({status})", 
+            admin_nome=admin_logado, 
+            detalhes=f"ID Contestação: {id_cont}", 
+            afetado=sdr_alvo
+        )
         return True, "Resposta enviada!"
     except Exception as e:
         return False, str(e)
