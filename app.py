@@ -64,68 +64,103 @@ def modal_anular(id_mon, sdr_nome):
         st.rerun()
 
 # ==========================================================
-# 📜 FUNÇÃO HISTÓRICO (GLOBAL)
+# 📜 FUNÇÃO HISTÓRICO (GLOBAL COM CONTESTAÇÃO E EXPIRAÇÃO)
 # ==========================================================
 def render_historico_geral(nivel, nome_completo):
-    st.title("📚 Histórico de Monitorias")
+    st.title("📚 Histórico Geral de Monitorias")
     
-    if st.button("🔄 Atualizar Tabela", help="Recarrega os dados do banco"):
+    if st.button("🔄 Atualizar Dados", help="Recarrega monitorias e contestações"):
         get_all_records_db.clear()
         st.rerun()
 
-    df = get_all_records_db("monitorias")
+    # 1. Busca os dados de ambas as tabelas
+    df_monitorias = get_all_records_db("monitorias")
+    df_contestacoes = get_all_records_db("contestacoes")
     
-    if df is not None and not df.empty:
-        # Formata Data (Vem ISO do banco, converte para BR)
-        df['criado_em'] = pd.to_datetime(df['criado_em'])
-        df['Data_Exibicao'] = df['criado_em'].dt.strftime('%d/%m/%Y %H:%M')
-        
-        # Filtros de visualização
-        if nivel not in ["ADMIN", "GESTAO"]:
-            df_exibicao = df[df['sdr'].str.upper() == nome_completo.upper()].copy()
-        else:
-            c_busca, _ = st.columns([1, 1])
-            busca = c_busca.text_input("🔍 Pesquisar SDR:", placeholder="Digite o nome...")
-            df_exibicao = df[df['sdr'].str.contains(busca, case=False)].copy() if busca else df.copy()
-
-        if not df_exibicao.empty:
-            def extrair_falhas(detalhes):
-                if not detalhes or not isinstance(detalhes, dict): return "Nenhuma"
-                falhas = [f"{k}" for k, v in detalhes.items() if v in ["NC", "NC Grave"]]
-                return ", ".join(falhas) if falhas else "✅ 100% Conforme"
-
-            df_exibicao['Falhas'] = df_exibicao['detalhes'].apply(extrair_falhas)
-            
-            # Tabela Principal
-            st.dataframe(
-                df_exibicao[['id', 'Data_Exibicao', 'sdr', 'nota', 'Falhas', 'monitor_responsavel']], 
-                use_container_width=True, 
-                hide_index=True,
-                column_config={
-                    "nota": st.column_config.ProgressColumn("Nota", format="%d%%", min_value=0, max_value=100)
-                }
-            )
-
-            # --- ZONA ADMINISTRATIVA (CARDS DE ANULAÇÃO) ---
-            if nivel == "ADMIN":
-                st.divider()
-                st.subheader("🛠️ Gerenciar Registros (Admin)")
-                st.info("Abaixo estão as monitorias recentes. Clique em 'Anular' para remover.")
-                
-                # Exibe lista para facilitar a exclusão
-                for _, row in df_exibicao.head(10).iterrows():
-                    with st.container(border=True):
-                        c1, c2 = st.columns([4, 1])
-                        c1.markdown(f"**ID {row['id']}** | {row['sdr']} | {row['Data_Exibicao']} | Nota: **{row['nota']}%**")
-                        
-                        # Passamos o ID e o Nome para o modal
-                        if c2.button("🗑️ Anular", key=f"btn_del_{row['id']}", use_container_width=True):
-                            modal_anular(row['id'], row['sdr'])
-
-        else:
-            st.warning("Nenhum registro encontrado.")
-    else:
+    if df_monitorias is None or df_monitorias.empty:
         st.info("O banco de dados está vazio.")
+        return
+
+    # 2. Processamento de Cruzamento (Merge) para a Tabela
+    df_monitorias['criado_em'] = pd.to_datetime(df_monitorias['criado_em'])
+    
+    if df_contestacoes is not None and not df_contestacoes.empty:
+        df_cont_resumo = df_contestacoes[['monitoria_id', 'motivo', 'status', 'resposta_admin']].rename(
+            columns={
+                'motivo': 'Motivo SDR',
+                'status': 'Situação',
+                'resposta_admin': 'Resposta Auditor'
+            }
+        )
+        df_exibicao = pd.merge(df_monitorias, df_cont_resumo, left_on='id', right_on='monitoria_id', how='left')
+    else:
+        df_exibicao = df_monitorias.copy()
+        df_exibicao['Situação'] = "Nenhuma"
+        df_exibicao['Motivo SDR'] = "-"
+        df_exibicao['Resposta Auditor'] = "-"
+
+    # 3. Formatação da Tabela Principal
+    df_exibicao['Data_Exibicao'] = df_exibicao['criado_em'].dt.strftime('%d/%m/%Y %H:%M')
+    df_exibicao['Contestada?'] = df_exibicao['Situação'].apply(lambda x: "⚠️ Sim" if pd.notnull(x) and x != "Nenhuma" else "✅ Não")
+    
+    # Filtros de visualização
+    if nivel not in ["ADMIN", "GESTAO"]:
+        df_exibicao = df_exibicao[df_exibicao['sdr'].str.upper() == nome_completo.upper()].copy()
+    else:
+        c_busca, _ = st.columns([1, 1])
+        busca = c_busca.text_input("🔍 Pesquisar SDR ou ID:", placeholder="Digite o nome ou ID...")
+        if busca:
+            df_exibicao = df_exibicao[
+                (df_exibicao['sdr'].str.contains(busca, case=False)) | 
+                (df_exibicao['id'].astype(str).contains(busca))
+            ].copy()
+
+    # Exibe a tabela com as novas colunas de contestação
+    st.dataframe(
+        df_exibicao[[
+            'id', 'Data_Exibicao', 'sdr', 'nota', 'monitor_responsavel', 
+            'Contestada?', 'Situação', 'Motivo SDR', 'Resposta Auditor'
+        ]], 
+        use_container_width=True, 
+        hide_index=True,
+        column_config={
+            "nota": st.column_config.ProgressColumn("Nota", format="%d%%", min_value=0, max_value=100),
+            "Situação": st.column_config.SelectboxColumn("Status Contest.", options=["Pendente", "Aceita", "Recusada", "Nenhuma"])
+        }
+    )
+
+    # --- ZONA ADMINISTRATIVA (CARDS COM VALIDADE) ---
+    if nivel == "ADMIN":
+        st.divider()
+        st.subheader("🛠️ Gerenciar Registros (Anulação)")
+        st.info("Monitorias podem ser anuladas em até **24 horas** após a criação.")
+
+        # Definir tempo de validade (exemplo: 24 horas)
+        prazo_horas = 24
+        agora = datetime.now(df_monitorias['criado_em'].dt.tz) # Sincroniza timezone
+
+        # Mostra apenas os últimos 10 para não poluir
+        for _, row in df_exibicao.head(10).iterrows():
+            # Cálculo de expiração
+            data_criacao = row['criado_em']
+            data_limite = data_criacao + timedelta(hours=prazo_horas)
+            expirado = agora > data_limite
+            
+            # Formatação do Card
+            with st.container(border=True):
+                col_info, col_status, col_btn = st.columns([3, 2, 1])
+                
+                col_info.markdown(f"**ID {row['id']}** | {row['sdr']}\n\n{row['Data_Exibicao']}")
+                
+                # Coluna de Status da Validade
+                if expirado:
+                    col_status.error(f"❌ Expirado\n\nLimite: {data_limite.strftime('%d/%m %H:%M')}")
+                else:
+                    col_status.success(f"⏳ Válido\n\nExpira em: {data_limite.strftime('%d/%m %H:%M')}")
+                
+                # Botão de Anular (Desabilita se expirado para segurança, ou mantém se Admin tiver passe livre)
+                if col_btn.button("🗑️ Anular", key=f"del_{row['id']}", use_container_width=True, disabled=expirado):
+                    modal_anular(row['id'], row['sdr'])
 
 # ==========================================================
 # 🚀 FUNÇÃO PRINCIPAL (MAIN)
