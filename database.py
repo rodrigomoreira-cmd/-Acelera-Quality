@@ -40,13 +40,8 @@ def get_all_records_db(tabela):
 # 🕵️ LOG DE AUDITORIA (CÂMERAS DE SEGURANÇA BLINDADAS)
 # ==========================================================
 def registrar_auditoria(acao, detalhes="", colaborador_afetado="N/A", nome_ator_explicito=None):
-    """
-    Agora recebe o nome explicitamente para não falhar durante o Login/Logout.
-    """
     try:
-        # Se um nome explícito for passado, usa ele. Se não, tenta buscar na sessão.
         ator_responsavel = nome_ator_explicito if nome_ator_explicito else st.session_state.get('user_nome', 'Sistema')
-        
         payload = {
             "acao": acao,
             "admin_responsavel": ator_responsavel,
@@ -128,26 +123,17 @@ def anular_monitoria_auditada(id_monitoria, motivo, nome_responsavel):
         supabase.table("monitorias").delete().eq("id", id_monitoria).execute()
         
         detalhes_log = f"ID: {id_monitoria} | Motivo: {motivo} | Fotos apagadas: {len(arquivos_para_apagar)}"
-        
-        # Passa o nome explícito do Admin que está apagando
-        registrar_auditoria(
-            acao="ANULAR_MONITORIA", 
-            detalhes=detalhes_log, 
-            colaborador_afetado=sdr_afetado,
-            nome_ator_explicito=nome_responsavel
-        )
+        registrar_auditoria("ANULAR_MONITORIA", detalhes_log, sdr_afetado, nome_responsavel)
         
         get_all_records_db.clear()
         return True, "Anulada e arquivos apagados."
     except Exception as e: return False, str(e)
 
-
-    # ==========================================================
+# ==========================================================
 # 🗑️ REMOVER FOTO ESPECÍFICA (SEM ANULAR A MONITORIA)
 # ==========================================================
 def remover_evidencia_monitoria(id_monitoria, nome_criterio, url_arquivo, nome_responsavel):
     try:
-        # 1. Puxa a monitoria atual
         res_mon = supabase.table("monitorias").select("*").eq("id", id_monitoria).execute()
         if not res_mon.data: return False, "Monitoria não encontrada."
         
@@ -155,7 +141,6 @@ def remover_evidencia_monitoria(id_monitoria, nome_criterio, url_arquivo, nome_r
         sdr_afetado = dados_mon.get('sdr', 'N/A')
         detalhes = dados_mon.get('detalhes', {})
 
-        # 2. Apaga a foto do Storage (se a URL for válida)
         if url_arquivo:
             nome_arquivo_storage = url_arquivo.split('/')[-1]
             if nome_arquivo_storage:
@@ -164,22 +149,13 @@ def remover_evidencia_monitoria(id_monitoria, nome_criterio, url_arquivo, nome_r
                 except Exception as e:
                     print(f"Aviso: Falha ao apagar do Storage: {e}")
 
-        # 3. Atualiza o JSON (remove o link e a flag da evidência)
         if isinstance(detalhes, dict) and nome_criterio in detalhes:
             detalhes[nome_criterio]['url_arquivo'] = None
             detalhes[nome_criterio]['evidencia_anexada'] = False
-            
-            # Salva o novo JSON no banco
             supabase.table("monitorias").update({"detalhes": detalhes}).eq("id", id_monitoria).execute()
 
-        # 4. Regista no Log de Auditoria
         detalhes_log = f"ID: {id_monitoria} | Critério: '{nome_criterio}' | Foto apagada manualmente."
-        registrar_auditoria(
-            acao="REMOVER_EVIDENCIA", 
-            detalhes=detalhes_log, 
-            colaborador_afetado=sdr_afetado,
-            nome_ator_explicito=nome_responsavel
-        )
+        registrar_auditoria("REMOVER_EVIDENCIA", detalhes_log, sdr_afetado, nome_responsavel)
         
         get_all_records_db.clear()
         return True, "Foto apagada com sucesso!"

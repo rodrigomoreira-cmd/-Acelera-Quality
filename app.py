@@ -167,7 +167,6 @@ def main():
     if "force_logout" not in st.session_state: st.session_state.force_logout = False
 
     if not st.session_state.authenticated:
-        # Se force_logout estiver True, ele ignora o Cookie e obriga a digitar e-mail/senha
         if not st.session_state.force_logout:
             cookie_user = cookie_manager.get('user_token')
             if cookie_user and str(cookie_user).strip() != "":
@@ -249,9 +248,6 @@ def main():
         # ==========================================================
         # 🛡️ LOGOUT BLINDADO (Fase 1 e 2)
         # ==========================================================
-# ==========================================================
-        # 🛡️ LOGOUT BLINDADO (Fase 1 e 2) - CORRIGIDO
-        # ==========================================================
         if st.session_state.get('logout_step'):
             st.warning("🔐 Deseja sair do sistema?")
             
@@ -260,7 +256,6 @@ def main():
                 nome_saindo = st.session_state.get('user_nome', 'Desconhecido')
                 registrar_auditoria("LOGOUT", "Sessão encerrada.", "N/A", nome_saindo)
                 
-                # Apaga o cookie com segurança (ignora erro se já não existir)
                 try:
                     if cookie_manager.get('user_token'):
                         cookie_manager.delete('user_token')
@@ -268,7 +263,7 @@ def main():
                     pass
                 
                 st.session_state.clear()
-                st.session_state.force_logout = True # Impede o navegador de o puxar de volta
+                st.session_state.force_logout = True
                 st.rerun()
                 
             if col_canc.button("Cancelar", use_container_width=True):

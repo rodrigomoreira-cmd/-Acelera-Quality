@@ -21,7 +21,6 @@ def render_login(cookie_manager):
         if 'usuario_aprovado' in st.session_state:
             u = st.session_state.usuario_aprovado
             
-            # Grava o novo cookie na nuvem do navegador e dá tempo para processar
             expiry = datetime.now() + timedelta(days=1)
             cookie_manager.set('user_token', u['user'], expires_at=expiry)
             
@@ -44,7 +43,7 @@ def render_login(cookie_manager):
                 del st.session_state['usuario_aprovado']
                 st.rerun()
                 
-            return # Pára a execução aqui para não desenhar o formulário abaixo
+            return 
             
         # ==========================================================
         # 📝 FASE 1: FORMULÁRIO DE LOGIN NORMAL
@@ -72,7 +71,6 @@ def render_login(cookie_manager):
                         else:
                             senha_banco = user_data.get('senha')
                             if hash_password(password_limpo) == senha_banco or password_limpo == senha_banco:
-                                # Senha Certa! Passa para a Fase 2
                                 st.session_state.usuario_aprovado = user_data
                                 st.rerun()
                             else:
