@@ -1,161 +1,191 @@
 import streamlit as st
 import pandas as pd
 import time
-# IMPORTANTE: Garante que estamos chamando a função nova do database.py
-from database import get_criterios_ativos, salvar_monitoria_auditada, supabase
+import uuid
+from database import salvar_monitoria_auditada, supabase
 
 def render_nova_monitoria():
-    st.title("📝 Nova Monitoria")
-    st.markdown("Preencha o checklist abaixo. Lembre-se: **NC Grave zera a nota automaticamente.**")
+    dept_selecionado = st.session_state.get('departamento_selecionado', 'Todos')
     
-    # 1. Busca os dados necessários (Critérios)
-    df_criterios = get_criterios_ativos()
+    st.title(f"📝 Nova Monitoria - {dept_selecionado}")
+    st.markdown("Preencha o checklist abaixo para avaliar a performance do colaborador.")
     
-    # 2. Busca lista de SDRs ativos para o Selectbox
+    # ==========================================================
+    # 1. BUSCA E FILTRO DE CRITÉRIOS
+    # ==========================================================
     try:
-        response = supabase.table("usuarios").select("nome").eq("nivel", "SDR").eq("esta_ativo", True).order("nome").execute()
-        lista_sdrs = [u['nome'] for u in response.data] if response.data else []
+        res_crit = supabase.table("config_criterios").select("*").eq("ativo", True).execute()
+        df_criterios = pd.DataFrame(res_crit.data) if res_crit.data else pd.DataFrame()
+        
+        res_users = supabase.table("usuarios").select("nome, departamento, nivel").eq("esta_ativo", True).execute()
+        df_users = pd.DataFrame(res_users.data) if res_users.data else pd.DataFrame()
     except Exception as e:
-        st.error(f"Erro ao carregar lista de SDRs: {e}")
-        lista_sdrs = []
-
-    if df_criterios.empty:
-        st.warning("⚠️ Nenhum critério ativo. Vá em 'Config. Critérios' para cadastrar.")
+        st.error(f"Erro de conexão com o banco: {e}")
         return
 
-    # --- INÍCIO DO FORMULÁRIO ---
-    # clear_on_submit=True garante que, após salvar com sucesso, os campos limpem
-    with st.form("form_monitoria_dinamica", clear_on_submit=True):
+    # Filtros
+    if not df_criterios.empty and dept_selecionado != "Todos":
+        dept_user = dept_selecionado.strip().upper()
+        df_criterios = df_criterios[df_criterios['departamento'].str.upper() == dept_user].copy()
+
+    if df_criterios.empty:
+        st.warning(f"⚠️ Nenhum critério ativo encontrado para **{dept_selecionado}**.")
+        return
+
+    if not df_users.empty and dept_selecionado != "Todos":
+        dept_user = dept_selecionado.strip().upper()
+        df_users = df_users[(df_users['departamento'].str.upper() == dept_user) | 
+                            (df_users['nivel'].str.upper() == dept_user)]
+    
+    lista_colaboradores = sorted(df_users['nome'].unique().tolist()) if not df_users.empty else []
+    opcoes_sdr = ["Selecione..."] + lista_colaboradores
+
+    # ==========================================================
+    # 2. FORMULÁRIO DE MONITORIA
+    # ==========================================================
+    with st.form("form_monitoria_v4", clear_on_submit=True):
         
-        # BLOCO 1: IDENTIFICAÇÃO
         with st.container(border=True):
-            st.markdown("### 👤 Identificação")
-            col_sdr, col_link1, col_link2 = st.columns([2, 1.5, 1.5])
-            
-            sdr_escolhido = col_sdr.selectbox("Colaborador (SDR)", options=["Selecione..."] + lista_sdrs)
-            link_selene = col_link1.text_input("Link da Conversa", placeholder="URL da gravação...")
-            link_nectar = col_link2.text_input("Link do CRM", placeholder="URL do card...")
+            st.subheader("👤 Identificação da Chamada")
+            c1, c2, c3 = st.columns([2, 1.5, 1.5])
+            sdr_escolhido = c1.selectbox("Colaborador Auditado", options=opcoes_sdr)
+            link_selene = c2.text_input("URL da Gravação (Selene/Zoom)", placeholder="http://...")
+            link_nectar = c3.text_input("URL do CRM (Nectar)", placeholder="http://...")
 
-        st.markdown("<br>", unsafe_allow_html=True) 
+        st.write("##")
 
-        # BLOCO 2: AVALIAÇÃO (Checklist Dinâmico)
         respostas = {}
-        grupos = df_criterios['grupo'].unique()
-        
+        grupos = df_criterios['grupo'].unique() if 'grupo' in df_criterios.columns else ["Geral"]
+
         for grupo in grupos:
-            with st.expander(f"📂 {grupo}", expanded=True):
-                itens = df_criterios[df_criterios['grupo'] == grupo]
+            with st.expander(f"📂 {grupo.upper()}", expanded=True):
+                itens_grupo = df_criterios[df_criterios['grupo'] == grupo]
                 
-                for _, row in itens.iterrows():
-                    col_pergunta, col_resposta = st.columns([3, 2])
-                    
+                for _, row in itens_grupo.iterrows():
                     nome_c = row['nome_criterio']
+                    id_c = row['id']
                     peso_c = float(row.get('peso', 1.0))
                     
-                    col_pergunta.markdown(f"**{nome_c}**")
-                    col_pergunta.caption(f"Peso: {peso_c}")
+                    st.markdown(f"**{nome_c}**")
+                    col_res, col_com, col_img = st.columns([1.5, 2, 1.2])
                     
-                    # Criação dos Radio Buttons
+                    v_res = col_res.radio(f"Status {id_c}", ["C", "NC", "NC Grave", "NSA"], 
+                                         index=0, horizontal=True, label_visibility="collapsed", key=f"rad_{id_c}")
+                    
+                    v_com = col_com.text_input("Comentário", placeholder="Justificativa...", 
+                                             label_visibility="collapsed", key=f"com_{id_c}")
+                    
+                    v_img = col_img.file_uploader("Evidência", type=['png', 'jpg', 'jpeg'], 
+                                                label_visibility="collapsed", key=f"file_{id_c}")
+                    
                     respostas[nome_c] = {
-                        "valor": col_resposta.radio(
-                            f"Avaliação para {nome_c}", 
-                            options=["C", "NC", "NC Grave", "NSA"],
-                            index=0,
-                            horizontal=True,
-                            label_visibility="collapsed",
-                            key=f"crit_{row['id']}"
-                        ),
-                        "peso": peso_c
+                        "valor": v_res, "peso": peso_c, "comentario": v_com,
+                        "arquivo": v_img, "nome_original": v_img.name if v_img else None
+                    }
+                    st.divider()
+
+        st.subheader("✍️ Feedback Final")
+        observacoes = st.text_area("Pontos Positivos e Planos de Ação:", height=150)
+
+        # ==========================================================
+        # 3. PROCESSAMENTO E UPLOAD DE DADOS
+        # ==========================================================
+        if st.form_submit_button("🚀 Finalizar e Enviar Monitoria", use_container_width=True, type="primary"):
+            
+            if sdr_escolhido == "Selecione...":
+                st.error("⚠️ Por favor, selecione o colaborador auditado.")
+                st.stop()
+
+            # Bloqueia se der erro (NC) e não colocar comentário
+            erros_sem_comentario = [n for n, r in respostas.items() if r['valor'] in ['NC', 'NC Grave'] and not r['comentario']]
+            if erros_sem_comentario:
+                st.error(f"❌ Justificativa obrigatória para os erros em: {', '.join(erros_sem_comentario)}")
+                st.stop()
+
+            with st.spinner("Salvando avaliação e limpando nomes de arquivos para a nuvem... ☁️"):
+                total_maximo = 0.0
+                total_conquistado = 0.0
+                nc_grave_detectado = False
+                detalhes_finais = {}
+                erro_upload = False # Variável para travar se o Supabase recusar a foto
+
+                for nome, item in respostas.items():
+                    res = item["valor"]
+                    peso = item["peso"]
+                    
+                    # ----------------------------------------------------
+                    # 🛠️ UPLOAD BLINDADO (Remove espaços e acentos)
+                    # ----------------------------------------------------
+                    url_publica = None
+                    if item["arquivo"]:
+                        try:
+                            f = item["arquivo"]
+                            # Pega só a extensão (.png, .jpg)
+                            ext = f.name.split('.')[-1].lower() 
+                            # Cria um nome 100% limpo, ex: prova_a1b2c3d4.png
+                            nome_bucket = f"prova_{uuid.uuid4().hex[:10]}.{ext}"
+                            
+                            # Faz o upload
+                            supabase.storage.from_("evidencias").upload(
+                                path=nome_bucket, 
+                                file=f.getvalue(),
+                                file_options={"content-type": f.type}
+                            )
+                            
+                            # Gera o link público
+                            res_url = supabase.storage.from_("evidencias").get_public_url(nome_bucket)
+                            url_publica = res_url.public_url if hasattr(res_url, 'public_url') else str(res_url)
+                            
+                        except Exception as e:
+                            st.error(f"🛑 Erro Técnico ao enviar '{item['nome_original']}': {e}")
+                            erro_upload = True
+                            st.stop() # Para o salvamento para não gerar monitoria defeituosa
+
+                    # ----------------------------------------------------
+                    # Lógica de Pontuação
+                    if res == "NC Grave": nc_grave_detectado = True
+                    
+                    if res != "NSA":
+                        total_maximo += peso
+                        if res == "C":
+                            total_conquistado += peso
+
+                    # Montagem do JSON
+                    detalhes_finais[nome] = {
+                        "nota": res,
+                        "comentario": item["comentario"],
+                        "arquivo": item["nome_original"], # Mantemos o nome bonito só para exibir
+                        "url_arquivo": url_publica,
+                        "evidencia_anexada": True if url_publica else False
                     }
 
-        st.markdown("<br>", unsafe_allow_html=True)
+                # Se houve erro no upload, não salva a monitoria
+                if erro_upload:
+                    st.stop()
 
-        # BLOCO 3: CONCLUSÃO E FEEDBACK
-        with st.container(border=True):
-            st.markdown("### ✍️ Feedback Final")
-            observacoes = st.text_area(
-                "Observações Gerais:", 
-                placeholder="Escreva aqui os pontos positivos e de melhoria. O SDR verá isso.",
-                height=150
-            )
+                # Cálculo da Nota
+                nota_final = 0 if nc_grave_detectado else (
+                    (total_conquistado / total_maximo * 100) if total_maximo > 0 else 100
+                )
 
-        # BOTÃO DE ENVIO
-        col_submit, _ = st.columns([1, 2])
-        submitted = col_submit.form_submit_button("🚀 Finalizar Monitoria", use_container_width=True, type="primary")
+                payload = {
+                    "sdr": sdr_escolhido,
+                    "departamento": dept_selecionado,
+                    "nota": int(round(nota_final)),
+                    "link_selene": link_selene,
+                    "link_nectar": link_nectar,
+                    "observacoes": observacoes,
+                    "monitor_responsavel": st.session_state.get('user_nome', 'Sistema'),
+                    "detalhes": detalhes_finais
+                }
 
-        # --- LÓGICA DE PROCESSAMENTO ---
-        if submitted:
-            # 1. Validação de Campo Obrigatório
-            if sdr_escolhido == "Selecione...":
-                st.error("❌ Erro: Você deve selecionar um Colaborador (SDR).")
-                st.stop()
-            
-            # 2. Cálculo da Nota
-            total_possivel = 0.0
-            total_obtido = 0.0
-            tem_nc_grave = False
-            falhas_graves = []
-
-            for nome, item in respostas.items():
-                resp = item["valor"]
-                peso = item["peso"]
-
-                if resp == "NC Grave":
-                    tem_nc_grave = True
-                    falhas_graves.append(nome)
+                sucesso, msg = salvar_monitoria_auditada(payload)
                 
-                # C = Soma tudo
-                if resp == "C":
-                    total_obtido += peso
-                    total_possivel += peso
-                # NC ou NC Grave = Soma só no possível (para reduzir a média)
-                elif resp in ["NC", "NC Grave"]:
-                    total_possivel += peso
-                # NSA = Não soma em nada (neutro)
-
-            # Regra: NC Grave zera a nota instantaneamente
-            if tem_nc_grave:
-                nota_final = 0.0
-            else:
-                nota_final = (total_obtido / total_possivel * 100) if total_possivel > 0 else 100.0
-
-            # 3. Preparação dos Dados (Payload)
-            payload = {
-                "sdr": sdr_escolhido,
-                "nota": round(nota_final, 2),
-                "link_selene": link_selene,
-                "link_nectar": link_nectar,
-                "observacoes": observacoes,
-                # Pega o nome do admin logado ou usa 'Admin' como fallback
-                "monitor_responsavel": st.session_state.get('user_nome', 'Admin'),
-                # Salva o dicionário de respostas detalhado
-                "detalhes": {n: i["valor"] for n, i in respostas.items()}
-            }
-
-            # 4. Envio Seguro (Chama database.py)
-            sucesso, msg = salvar_monitoria_auditada(payload)
-            
-            if sucesso:
-                # Feedback Visual
-                if tem_nc_grave:
-                    st.error(f"🚨 NOTA ZERO APLICADA! Motivo: Falha Grave em '{', '.join(falhas_graves)}'")
-                else:
-                    # Define a cor do card baseada na nota
-                    if nota_final >= 90: cor = "#00cc96" # Verde
-                    elif nota_final >= 70: cor = "#ffa500" # Laranja
-                    else: cor = "#ff4b4b" # Vermelho
-
-                    st.markdown(f"""
-                        <div style="background-color: {cor}20; border: 2px solid {cor}; padding: 20px; border-radius: 10px; text-align: center; margin-top: 20px;">
-                            <h2 style="color: {cor}; margin:0;">Monitoria Registrada!</h2>
-                            <h1 style="font-size: 50px; color: white; margin: 10px 0;">{nota_final:.1f}%</h1>
-                            <p style="color: #ccc;">Monitor: {st.session_state.get('user_nome')}</p>
-                        </div>
-                    """, unsafe_allow_html=True)
+                if sucesso:
+                    st.success(f"✅ Monitoria de {sdr_escolhido} finalizada com nota {payload['nota']}%!")
+                    if nc_grave_detectado: st.warning("⚠️ Nota zero aplicada devido a NC Grave.")
                     st.balloons()
-                    
-                    # Opcional: Pausa breve para leitura antes de limpar (devido ao clear_on_submit)
-                    time.sleep(3)
+                    time.sleep(2)
                     st.rerun()
-            else:
-                st.error(f"❌ Falha técnica ao salvar: {msg}")
+                else:
+                    st.error(f"Erro ao salvar no banco de dados: {msg}")

@@ -33,7 +33,7 @@ def render_meu_perfil():
         if res.data and len(res.data) > 0:
             user_info = res.data[0]
             foto_atual = user_info.get('foto_url')
-            senha_banco = user_info.get('senha') # No seu print a coluna é 'senha'
+            senha_banco = user_info.get('senha') 
             
             user_nome_exibicao = user_info.get('nome', 'Usuário')
             nivel = user_info.get('nivel')
@@ -71,6 +71,13 @@ def render_meu_perfil():
                     )
                     url = supabase.storage.from_("avatars").get_public_url(nome_arq)
                     supabase.table("usuarios").update({"foto_url": url}).eq("id", user_info['id']).execute()
+                    
+                    # --- 📸 LOG GRAVANDO TROCA DE FOTO ---
+                    registrar_auditoria(
+                        acao="ALTERAÇÃO DE PERFIL",
+                        detalhes="O utilizador atualizou a sua foto de perfil."
+                    )
+                    
                     st.success("Foto salva!")
                     time.sleep(1)
                     st.rerun()
@@ -119,7 +126,12 @@ def render_meu_perfil():
                     novo_hash = hash_password(s_nova)
                     supabase.table("usuarios").update({"senha": novo_hash}).eq("id", user_info['id']).execute()
                     
-                    registrar_auditoria("ALT_SENHA", user_nome_exibicao, "Trocou a senha.")
+                    # --- 📸 LOG GRAVANDO TROCA DE SENHA ---
+                    registrar_auditoria(
+                        acao="ALTEROU PRÓPRIA SENHA",
+                        detalhes="O utilizador alterou a sua própria senha com sucesso."
+                    )
+                    
                     st.success("Senha atualizada e protegida!")
                     st.balloons()
                     time.sleep(1)

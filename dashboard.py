@@ -8,28 +8,39 @@ from datetime import datetime, timedelta
 def render_dashboard():
     nivel_usuario = str(st.session_state.get('nivel', 'SDR')).upper()
     nome_completo_logado = st.session_state.get('user_nome', 'Usuário')
+    dept_selecionado = st.session_state.get('departamento_selecionado', 'Todos')
 
     # 1. Busca de Dados
     df = get_all_records_db("monitorias")
+    df_cont = get_all_records_db("contestacoes")
     
     if df is None or df.empty:
         st.info("💡 Nenhuma monitoria encontrada no banco de dados.")
         return
 
-    # 2. Tratamento de Dados
+    # 2. Tratamento de Dados Base
     df['nota'] = pd.to_numeric(df['nota'], errors='coerce')
     df['criado_em'] = pd.to_datetime(df['criado_em'])
     df = df.sort_values(by='criado_em')
 
-    st.title("📊 Dashboard de Performance")
+    # --- NOVO: APLICA O FILTRO DE DEPARTAMENTO GLOBAL ---
+    if dept_selecionado != "Todos" and 'departamento' in df.columns:
+        df = df[df['departamento'].astype(str).str.strip().str.upper() == dept_selecionado.strip().upper()].copy()
 
-    # --- 1. SEÇÃO DE FILTROS ---
+    st.title(f"📊 Dashboard de Performance - {dept_selecionado}")
+
+    if df.empty:
+        st.warning(f"⚠️ Nenhuma monitoria encontrada para a equipe: {dept_selecionado}.")
+        return
+
+    # --- 1. SEÇÃO DE FILTROS SECUNDÁRIOS ---
     with st.container(border=True):
         c1, c2 = st.columns([1, 1.5])
         
-        if nivel_usuario in ["ADMIN", "GESTAO"]:
+        # AUDITOR agora tem a mesma visão de liderança no Dashboard
+        if nivel_usuario in ["ADMIN", "GESTAO", "AUDITOR"]:
             lista_sdrs = sorted(df['sdr'].unique().tolist())
-            sdr_escolhido = c1.selectbox("Filtrar por SDR:", ["Ver Todos"] + lista_sdrs)
+            sdr_escolhido = c1.selectbox("Filtrar por Colaborador:", ["Ver Todos"] + lista_sdrs)
         else:
             st.markdown(f"Visualizando resultados de: **{nome_completo_logado}**")
             sdr_escolhido = nome_completo_logado
@@ -44,11 +55,11 @@ def render_dashboard():
             max_value=hoje
         )
 
-    # Aplicação dos Filtros
+    # Aplicação dos Filtros de Nome e Data
     df_filtrado = df.copy()
     
-    if nivel_usuario == "SDR":
-        df_filtrado = df_filtrado[df_filtrado['sdr'] == nome_completo_logado]
+    if nivel_usuario not in ["ADMIN", "GESTAO", "AUDITOR"]:
+        df_filtrado = df_filtrado[df_filtrado['sdr'].str.strip().str.upper() == nome_completo_logado.strip().upper()]
     elif sdr_escolhido != "Ver Todos":
         df_filtrado = df_filtrado[df_filtrado['sdr'] == sdr_escolhido]
 
@@ -59,22 +70,21 @@ def render_dashboard():
         ]
 
     if df_filtrado.empty:
-        st.warning(f"⚠️ Sem dados para este período.")
+        st.warning(f"⚠️ Sem dados para este período ou colaborador.")
         return
+        
+    # Extrai IDs das monitorias filtradas para cruzar com as contestações
+    ids_filtrados = df_filtrado['id'].tolist()
 
     # --- 2. RANKING ESTRATÉGICO (Top 3) ---
-    if nivel_usuario in ["ADMIN", "GESTAO"] and sdr_escolhido == "Ver Todos":
+    if nivel_usuario in ["ADMIN", "GESTAO", "AUDITOR"] and sdr_escolhido == "Ver Todos":
         st.markdown("### 🏆 Elite da Qualidade (Ranking por Volume)")
         
-        # LÓGICA A APLICADA:
-        # Agrupa por SDR, calcula média e conta monitorias
         ranking = df_filtrado.groupby('sdr').agg(
             nota_media=('nota', 'mean'),
             qtd_mon=('id', 'count')
         ).reset_index()
 
-        # ORDENAÇÃO: 1º Quantidade (Maior), 2º Nota (Maior - Desempate)
-        # Isso garante que a Ingrydi (5 mon) fique acima do Paulo (1 mon)
         ranking = ranking.sort_values(
             by=['qtd_mon', 'nota_media'], 
             ascending=[False, False]
@@ -82,7 +92,6 @@ def render_dashboard():
         
         col_rank = st.columns(3)
         medalhas = ["🥇", "🥈", "🥉"]
-        # Cores para destacar a posição
         cores = ["#FFD700", "#C0C0C0", "#CD7F32"]
 
         for i, row in ranking.head(3).iterrows():
@@ -106,12 +115,35 @@ def render_dashboard():
                 """, unsafe_allow_html=True)
         st.divider()
 
-    # --- 3. MÉTRICAS TIPO CARD ---
+    # --- 3. MÉTRICAS TIPO CARD (Qualidade da Equipe) ---
     media_nota = df_filtrado['nota'].mean()
     m1, m2, m3 = st.columns(3)
     m1.metric("Média de Qualidade", f"{media_nota:.1f}%")
     m2.metric("Total de Monitorias", len(df_filtrado))
     m3.metric("Meta", "90%", delta=f"{media_nota - 90:.1f}%" if media_nota else None)
+
+    # --- 3.5 NOVO: MÉTRICAS DE CALIBRAÇÃO (Apenas Gestão e Auditor) ---
+    if nivel_usuario in ["ADMIN", "GESTAO", "AUDITOR"]:
+        st.write("##")
+        st.markdown("### ⚖️ Calibração e Contestações")
+        
+        if df_cont is not None and not df_cont.empty:
+            df_cont_filtrado = df_cont[df_cont['monitoria_id'].isin(ids_filtrados)].copy()
+            
+            total_cont = len(df_cont_filtrado)
+            pendentes = len(df_cont_filtrado[df_cont_filtrado['status'] == 'Pendente'])
+            aceitas = len(df_cont_filtrado[df_cont_filtrado['status'] == 'Aceita'])
+            
+            taxa_contestacao = (total_cont / len(df_filtrado) * 100) if len(df_filtrado) > 0 else 0
+            taxa_reversao = (aceitas / total_cont * 100) if total_cont > 0 else 0
+            
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Total Contestadas", total_cont)
+            c2.metric("Pendentes de Resposta", pendentes, delta="-SLA" if pendentes > 0 else "Limpo", delta_color="inverse")
+            c3.metric("Taxa de Contestação", f"{taxa_contestacao:.1f}%", help="Porcentagem de monitorias que os SDRs reclamaram.")
+            c4.metric("Contestações Aceitas (Reversão)", f"{taxa_reversao:.1f}%", help="Quantas vezes o Auditor aceitou a contestação e mudou a nota.")
+        else:
+            st.info("Nenhuma contestação registada para este período/filtro.")
 
     # --- 4. VELOCÍMETRO ---
     st.write("##")
@@ -134,15 +166,17 @@ def render_dashboard():
 
     # --- 5. GRÁFICO DE OFENSORES ---
     st.write("##")
-    st.subheader("📉 Principais Ofensores (NC e NCG)")
+    st.subheader("📉 Principais Ofensores (Erros NC e NCG)")
     
     if 'detalhes' in df_filtrado.columns:
         erros_dict = {}
         for _, row in df_filtrado.iterrows():
             detalhes = row['detalhes']
             if isinstance(detalhes, dict):
-                for criterio, status in detalhes.items():
-                    if status in ["NC", "NC Grave"]:
+                for criterio, info in detalhes.items():
+                    # Compatibilidade: Checa se a nota está num dicionário (novo) ou solta (antigo)
+                    nota_crit = info.get('nota', 'C') if isinstance(info, dict) else info
+                    if nota_crit in ["NC", "NC Grave", "NGC"]:
                         erros_dict[criterio] = erros_dict.get(criterio, 0) + 1
         
         if erros_dict:
@@ -156,7 +190,7 @@ def render_dashboard():
             fig_pareto.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font={'color': "white"})
             st.plotly_chart(fig_pareto, use_container_width=True)
         else:
-            st.success("🎉 Nenhum erro encontrado!")
+            st.success("🎉 Nenhum erro encontrado neste período!")
 
     # --- 6. GRÁFICO DE EVOLUÇÃO ---
     st.write("##")
@@ -170,8 +204,8 @@ def render_dashboard():
     fig_evolucao.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font={'color': "white"})
     st.plotly_chart(fig_evolucao, use_container_width=True)
 
-    # Ranking completo em tabela
-    if nivel_usuario in ["ADMIN", "GESTAO"] and sdr_escolhido == "Ver Todos":
+    # --- 7. RANKING COMPLETO (TABELA) ---
+    if nivel_usuario in ["ADMIN", "GESTAO", "AUDITOR"] and sdr_escolhido == "Ver Todos":
         st.write("##")
         st.subheader("📊 Ranking Completo (Prioridade: Volume)")
         st.dataframe(

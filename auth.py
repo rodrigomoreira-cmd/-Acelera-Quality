@@ -9,30 +9,59 @@ def hash_password(password):
     return hashlib.sha256(str.encode(password.strip())).hexdigest()
 
 def render_login(cookie_manager):
-    # Layout centralizado
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
         st.markdown("<br><br>", unsafe_allow_html=True)
         st.title("🔐 Acelera Quality")
-        st.markdown("Faça login para acessar o sistema.")
         
+        # ==========================================================
+        # 🛡️ FASE 2: BOTÃO COFRE (Garante a gravação do Cookie Novo)
+        # ==========================================================
+        if 'usuario_aprovado' in st.session_state:
+            u = st.session_state.usuario_aprovado
+            
+            # Grava o novo cookie na nuvem do navegador e dá tempo para processar
+            expiry = datetime.now() + timedelta(days=1)
+            cookie_manager.set('user_token', u['user'], expires_at=expiry)
+            
+            st.success(f"✅ Identidade confirmada, {u['nome']}!")
+            st.info("Credenciais de segurança atualizadas. Clique abaixo para prosseguir.")
+            
+            if st.button("🚀 Entrar no Painel", type="primary", use_container_width=True):
+                st.session_state.authenticated = True
+                st.session_state.force_logout = False
+                st.session_state.user_nome = u['nome']
+                st.session_state.user_login = u['user']
+                st.session_state.nivel = str(u.get('nivel', 'USUARIO')).upper()
+                
+                dept_banco = u.get('departamento')
+                st.session_state.departamento = dept_banco if dept_banco and str(dept_banco).strip() != "" else "Sem Departamento"
+                st.session_state.foto_url = u.get('foto_url')
+                
+                registrar_auditoria("LOGIN", "Acesso manual efetuado.", "N/A", u['nome'])
+                
+                del st.session_state['usuario_aprovado']
+                st.rerun()
+                
+            return # Pára a execução aqui para não desenhar o formulário abaixo
+            
+        # ==========================================================
+        # 📝 FASE 1: FORMULÁRIO DE LOGIN NORMAL
+        # ==========================================================
+        st.markdown("Faça login para acessar o sistema.")
         with st.form("login_form", clear_on_submit=False):
             email = st.text_input("E-mail", placeholder="seu.email@grupoacelerador.com.br")
             password = st.text_input("Senha", type="password")
             
-            submit = st.form_submit_button("Entrar", use_container_width=True, type="primary")
-            
-            if submit:
+            if st.form_submit_button("Verificar Credenciais", use_container_width=True, type="primary"):
                 if not email or not password:
                     st.warning("Preencha todos os campos.")
                 else:
-                    # Limpeza preventiva (minúsculo e sem espaços)
                     email_limpo = email.lower().strip()
                     password_limpo = password.strip()
                     
                     try:
-                        # 1. Busca o usuário no banco (usando ilike para ignorar maiúsculas/minúsculas)
                         response = supabase.table("usuarios").select("*").ilike("user", email_limpo).execute()
                         user_data = response.data[0] if response.data else None
                         
@@ -41,51 +70,14 @@ def render_login(cookie_manager):
                         elif not user_data.get('esta_ativo', True):
                             st.error("🚫 Acesso bloqueado. Contate o administrador.")
                         else:
-                            # --- LÓGICA DE VERIFICAÇÃO DE SENHA (HÍBRIDA) ---
-                            senha_banco = user_data.get('senha')  # ou 'password', conforme seu banco
-                            
-                            # Calcula o hash da senha que foi digitada agora
-                            hash_digitado = hash_password(password_limpo)
-                            
-                            acesso_permitido = False
-                            
-                            # Verificação 1: A senha digitada bate com o Hash do banco? (Usuários com senha nova)
-                            if hash_digitado == senha_banco:
-                                acesso_permitido = True
-                                
-                            # Verificação 2: A senha digitada é IGUAL ao texto do banco? (Usuários antigos/Legado)
-                            elif password_limpo == senha_banco:
-                                acesso_permitido = True
-                                # Opcional: Avisar para trocar a senha futuramente
-                            
-                            if acesso_permitido:
-                                # SUCESSO! Configura a sessão
-                                st.success(f"Bem-vindo, {user_data['nome']}!")
-                                
-                                # Define variáveis de sessão
-                                st.session_state.authenticated = True
-                                st.session_state.user_nome = user_data['nome']
-                                st.session_state.user_login = user_data['user'] # Salva o email exato do banco
-                                st.session_state.nivel = str(user_data.get('nivel', 'SDR')).upper()
-                                st.session_state.foto_url = user_data.get('foto_url')
-                                
-                                # Grava Cookie de 24h
-                                expiry = datetime.now() + timedelta(days=1)
-                                cookie_manager.set('user_token', user_data['user'], expires_at=expiry)
-                                
-                                # Auditoria de Login
-                                registrar_auditoria("LOGIN", user_data['nome'], "Acesso realizado via Auth.")
-                                
-                                time.sleep(1)
+                            senha_banco = user_data.get('senha')
+                            if hash_password(password_limpo) == senha_banco or password_limpo == senha_banco:
+                                # Senha Certa! Passa para a Fase 2
+                                st.session_state.usuario_aprovado = user_data
                                 st.rerun()
                             else:
                                 st.error("Senha incorreta.")
-                                
                     except Exception as e:
                         st.error(f"Erro de conexão: {e}")
 
-        st.markdown("""
-            <div style='text-align: center; color: gray; font-size: 12px; margin-top: 20px;'>
-                Acelera Quality v2.0 • Sistema Seguro
-            </div>
-        """, unsafe_allow_html=True)
+        st.markdown("<div style='text-align: center; color: gray; font-size: 12px; margin-top: 20px;'>Acelera Quality v2.0 • Sistema Seguro</div>", unsafe_allow_html=True)

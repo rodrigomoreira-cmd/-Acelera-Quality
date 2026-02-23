@@ -10,7 +10,8 @@ def render_cadastro():
     st.title("👥 Cadastro de Novo Usuário")
     
     # Recupera o nível de quem está logado para aplicar a restrição
-    nivel_logado = st.session_state.get('nivel', 'SDR').upper()
+    nivel_logado = st.session_state.get('nivel', 'USUARIO').upper()
+    admin_logado = st.session_state.get('user_nome', 'Admin')
     
     st.markdown("O e-mail será gerado automaticamente com o domínio **@grupoacelerador.com.br**.")
 
@@ -23,22 +24,26 @@ def render_cadastro():
         senha_pura = col3.text_input("Senha Inicial", type="password")
         telefone = col4.text_input("Telefone/WhatsApp", placeholder="(11) 99999-9999")
 
-        col5, col_extra = st.columns(2)
+        col5, col6 = st.columns(2)
         
         # --- LÓGICA DE RESTRIÇÃO DE NÍVEL ---
         if nivel_logado == "GESTAO":
-            # Gestão só pode cadastrar SDR
-            opcoes_nivel = ["SDR"]
-            st.info("💡 Como Gestor, você possui permissão para cadastrar apenas novos SDRs.")
+            # Gestão só pode cadastrar perfil operacional (USUARIO)
+            opcoes_nivel = ["USUARIO"]
+            st.info("💡 Como Gestor, você possui permissão para cadastrar apenas perfis operacionais (Usuários).")
         else:
             # Admin pode cadastrar qualquer um
-            opcoes_nivel = ["SDR", "ADMIN", "GESTAO"]
+            opcoes_nivel = ["USUARIO", "GESTAO", "ADMIN", "AUDITOR"]
         
-        nivel_acesso = col5.selectbox("Nível de Permissão para o novo usuário", options=opcoes_nivel, index=0)
+        nivel_acesso = col5.selectbox("Nível de Permissão", options=opcoes_nivel, index=0)
+        
+        # --- SELEÇÃO DE DEPARTAMENTO ---
+        opcoes_departamento = ["SDR", "Especialista", "Venda de Ingresso","Auditor"]
+        departamento = col6.selectbox("Departamento da Equipe", options=opcoes_departamento, index=0)
 
         st.divider()
         
-        if st.form_submit_button("🚀 Finalizar Cadastro"):
+        if st.form_submit_button("🚀 Finalizar Cadastro", type="primary"):
             # 1. Validação de campos obrigatórios
             if not nome_completo or not user_prefix or not senha_pura:
                 st.error("⚠️ Preencha os campos obrigatórios (Nome, Usuário e Senha).")
@@ -64,19 +69,22 @@ def render_cadastro():
                             "senha": senha_hash,
                             "telefone": telefone.strip() if telefone else None,
                             "nivel": nivel_acesso,
+                            "departamento": departamento,
                             "esta_ativo": True
                         }
                         
+                        # Salva no banco de usuários
                         supabase.table("usuarios").insert(payload).execute()
 
-                        # 5. Registro na Auditoria
+                        # 5. --- 📸 LOG DE AUDITORIA ---
+                        # Aqui usamos a câmera de segurança atualizada para gravar quem foi cadastrado
                         registrar_auditoria(
-                            acao="CADASTRO",
+                            acao="CADASTRO DE USUÁRIO",
                             colaborador_afetado=nome_completo.strip(),
-                            detalhes=f"Usuário {nivel_logado} criou {email_completo} com nível {nivel_acesso}."
+                            detalhes=f"Foi criado o login '{email_completo}' com o nível '{nivel_acesso}' para o departamento '{departamento}'."
                         )
                         
-                        st.success(f"✅ {nome_completo} cadastrado com sucesso!")
+                        st.success(f"✅ {nome_completo.strip()} cadastrado com sucesso no time de {departamento}!")
                         st.balloons()
                         
                 except Exception as e:
