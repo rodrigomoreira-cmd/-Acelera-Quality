@@ -166,24 +166,30 @@ def main():
     if "current_page" not in st.session_state: st.session_state.current_page = "DASHBOARD"
     if "force_logout" not in st.session_state: st.session_state.force_logout = False
 
+    # ==========================================================
+    # 🛡️ ESCUDO ANTI-SEQUESTRO DE SESSÃO
+    # ==========================================================
     if not st.session_state.authenticated:
-        if not st.session_state.force_logout:
-            cookie_user = cookie_manager.get('user_token')
-            if cookie_user and str(cookie_user).strip() != "":
-                try:
-                    res = supabase.table("usuarios").select("*").ilike("user", str(cookie_user)).execute()
-                    if res.data:
-                        u = res.data[0]
-                        if u.get('esta_ativo', True):
-                            st.session_state.authenticated = True
-                            st.session_state.user_nome = u['nome']
-                            st.session_state.user_login = u['user']
-                            st.session_state.nivel = str(u.get('nivel', 'USUARIO')).upper()
-                            st.session_state.departamento = u.get('departamento', 'SDR')
-                            st.session_state.foto_url = u.get('foto_url')
-                            registrar_auditoria("LOGIN (Automático)", "Sessão restaurada via cookie.", "N/A", u['nome'])
-                            st.rerun()
-                except: pass
+        # Se o usuário acabou de digitar a senha (Fase 1 aprovada), ignoramos o cookie antigo!
+        if 'usuario_aprovado' not in st.session_state:
+            if not st.session_state.force_logout:
+                cookie_user = cookie_manager.get('user_token')
+                # Previne leituras falsas ou atrasadas do componente
+                if cookie_user and str(cookie_user).strip() not in ["", "None"]:
+                    try:
+                        res = supabase.table("usuarios").select("*").ilike("user", str(cookie_user)).execute()
+                        if res.data:
+                            u = res.data[0]
+                            if u.get('esta_ativo', True):
+                                st.session_state.authenticated = True
+                                st.session_state.user_nome = u['nome']
+                                st.session_state.user_login = u['user']
+                                st.session_state.nivel = str(u.get('nivel', 'USUARIO')).upper()
+                                st.session_state.departamento = u.get('departamento', 'SDR')
+                                st.session_state.foto_url = u.get('foto_url')
+                                registrar_auditoria("LOGIN (Automático)", "Sessão restaurada via cookie.", "N/A", u['nome'])
+                                st.rerun()
+                    except: pass
         render_login(cookie_manager)
         st.stop()
 
@@ -246,29 +252,37 @@ def main():
         st.divider()
         
         # ==========================================================
-        # 🛡️ LOGOUT BLINDADO (Fase 1 e 2)
+        # 🛡️ LOGOUT BLINDADO COM "SALA DE ESPERA" PARA O NAVEGADOR
         # ==========================================================
         if st.session_state.get('logout_step'):
             st.warning("🔐 Deseja sair do sistema?")
-            
             col_conf, col_canc = st.columns(2)
-            if col_conf.button("Confirmar", type="primary", use_container_width=True):
+            if col_conf.button("Confirmar Saída", type="primary", use_container_width=True):
                 nome_saindo = st.session_state.get('user_nome', 'Desconhecido')
                 registrar_auditoria("LOGOUT", "Sessão encerrada.", "N/A", nome_saindo)
                 
+                # Envia o comando para o navegador destruir o cookie fantasma
                 try:
-                    if cookie_manager.get('user_token'):
-                        cookie_manager.delete('user_token')
-                except Exception:
-                    pass
+                    cookie_manager.delete('user_token')
+                except Exception: pass
                 
-                st.session_state.clear()
-                st.session_state.force_logout = True
+                # Entra na sala de espera
+                st.session_state.aguardando_limpeza = True
+                st.session_state.logout_step = False
                 st.rerun()
                 
             if col_canc.button("Cancelar", use_container_width=True):
                 st.session_state.logout_step = False
                 st.rerun()
+                
+        elif st.session_state.get('aguardando_limpeza'):
+            st.success("✅ Sessão encerrada. Navegador limpo.")
+            if st.button("Voltar ao Ecrã de Login", type="primary", use_container_width=True):
+                st.session_state.clear()
+                st.session_state.force_logout = True # Mantém o escudo erguido
+                st.rerun()
+            st.stop() # Impede de desenhar o resto do sistema
+            
         else:
             if st.button("Sair do Sistema", use_container_width=True):
                 st.session_state.logout_step = True
