@@ -37,8 +37,7 @@ def render_dashboard():
     with st.container(border=True):
         c1, c2 = st.columns([1, 1.5])
         
-        # AUDITOR agora tem a mesma visão de liderança no Dashboard
-        if nivel_usuario in ["ADMIN", "GESTAO", "AUDITOR"]:
+        if nivel_usuario in ["ADMIN", "GESTAO", "AUDITOR", "GERENCIA"]:
             lista_sdrs = sorted(df['sdr'].unique().tolist())
             sdr_escolhido = c1.selectbox("Filtrar por Colaborador:", ["Ver Todos"] + lista_sdrs)
         else:
@@ -58,7 +57,7 @@ def render_dashboard():
     # Aplicação dos Filtros de Nome e Data
     df_filtrado = df.copy()
     
-    if nivel_usuario not in ["ADMIN", "GESTAO", "AUDITOR"]:
+    if nivel_usuario not in ["ADMIN", "GESTAO", "AUDITOR", "GERENCIA"]:
         df_filtrado = df_filtrado[df_filtrado['sdr'].str.strip().str.upper() == nome_completo_logado.strip().upper()]
     elif sdr_escolhido != "Ver Todos":
         df_filtrado = df_filtrado[df_filtrado['sdr'] == sdr_escolhido]
@@ -73,7 +72,6 @@ def render_dashboard():
         st.warning(f"⚠️ Sem dados para este período ou colaborador.")
         return
         
-    # Extrai IDs das monitorias filtradas para cruzar com as contestações
     ids_filtrados = df_filtrado['id'].tolist()
 
     # --- 2. RANKING ESTRATÉGICO (Top 3) ---
@@ -122,34 +120,12 @@ def render_dashboard():
     m2.metric("Total de Monitorias", len(df_filtrado))
     m3.metric("Meta", "90%", delta=f"{media_nota - 90:.1f}%" if media_nota else None)
 
-    # --- 3.5 NOVO: MÉTRICAS DE CALIBRAÇÃO (Apenas Gestão e Auditor) ---
-    if nivel_usuario in ["ADMIN", "GESTAO", "AUDITOR"]:
-        st.write("##")
-        st.markdown("### ⚖️ Calibração e Contestações")
-        
-        if df_cont is not None and not df_cont.empty:
-            df_cont_filtrado = df_cont[df_cont['monitoria_id'].isin(ids_filtrados)].copy()
-            
-            total_cont = len(df_cont_filtrado)
-            pendentes = len(df_cont_filtrado[df_cont_filtrado['status'] == 'Pendente'])
-            aceitas = len(df_cont_filtrado[df_cont_filtrado['status'] == 'Aceita'])
-            
-            taxa_contestacao = (total_cont / len(df_filtrado) * 100) if len(df_filtrado) > 0 else 0
-            taxa_reversao = (aceitas / total_cont * 100) if total_cont > 0 else 0
-            
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Total Contestadas", total_cont)
-            c2.metric("Pendentes de Resposta", pendentes, delta="-SLA" if pendentes > 0 else "Limpo", delta_color="inverse")
-            c3.metric("Taxa de Contestação", f"{taxa_contestacao:.1f}%", help="Porcentagem de monitorias que os SDRs reclamaram.")
-            c4.metric("Contestações Aceitas (Reversão)", f"{taxa_reversao:.1f}%", help="Quantas vezes o Auditor aceitou a contestação e mudou a nota.")
-        else:
-            st.info("Nenhuma contestação registada para este período/filtro.")
-
-    # --- 4. VELOCÍMETRO ---
+    # --- NOVO: VELOCÍMETRO (GAUGE) ABAIXO DOS CARDS ---
     st.write("##")
     fig_gauge = go.Figure(go.Indicator(
         mode = "gauge+number",
         value = media_nota,
+        title = {'text': "Temperatura de Qualidade"},
         number = {'suffix': "%"},
         gauge = {
             'axis': {'range': [0, 100]},
@@ -158,45 +134,102 @@ def render_dashboard():
                 {'range': [70, 90], 'color': "#ffa500"},
                 {'range': [90, 100], 'color': "#00cc96"}
             ],
-            'threshold': {'line': {'color': "black", 'width': 4}, 'value': 90}
+            'threshold': {'line': {'color': "white", 'width': 4}, 'value': 90}
         }
     ))
-    fig_gauge.update_layout(height=250, margin=dict(l=30, r=30, t=40, b=20), paper_bgcolor='rgba(0,0,0,0)', font={'color': "white"})
+    fig_gauge.update_layout(height=350, margin=dict(l=30, r=30, t=40, b=20), paper_bgcolor='rgba(0,0,0,0)', font={'color': "white"})
     st.plotly_chart(fig_gauge, use_container_width=True)
 
-    # --- 5. GRÁFICO DE OFENSORES ---
+    # --- 3.5 SAÚDE DA QUALIDADE E CALIBRAÇÃO ---
     st.write("##")
-    st.subheader("📉 Principais Ofensores (Erros NC e NCG)")
+    st.markdown("### ⚖️ Saúde da Qualidade e Calibração")
     
+    df_cont_filtrado = pd.DataFrame()
+    total_cont = pendentes = aceitas = taxa_contestacao = taxa_reversao = 0
+    
+    if df_cont is not None and not df_cont.empty:
+        df_cont_filtrado = df_cont[df_cont['monitoria_id'].isin(ids_filtrados)].copy()
+        
+        if not df_cont_filtrado.empty:
+            total_cont = len(df_cont_filtrado)
+            pendentes = len(df_cont_filtrado[df_cont_filtrado['status'] == 'Pendente'])
+            aceitas = len(df_cont_filtrado[df_cont_filtrado['status'] == 'Aceita'])
+            
+            taxa_contestacao = (total_cont / len(df_filtrado) * 100) if len(df_filtrado) > 0 else 0
+            taxa_reversao = (aceitas / total_cont * 100) if total_cont > 0 else 0
+
+    if nivel_usuario in ["ADMIN", "GESTAO", "AUDITOR", "GERENCIA"]:
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Total Contestadas", total_cont)
+        c2.metric("Pendentes de Resposta", pendentes, delta="-SLA" if pendentes > 0 else "Limpo", delta_color="inverse")
+        c3.metric("Taxa de Contestação", f"{taxa_contestacao:.1f}%", help="Porcentagem de monitorias que os SDRs reclamaram.")
+        c4.metric("Contestações Aceitas (Reversão)", f"{taxa_reversao:.1f}%", help="Quantas vezes o Auditor aceitou a contestação e mudou a nota.")
+
+    # --- FUNIL E DONUT ---
+    st.write("##")
+    c_graf_funil, c_graf_donut = st.columns([1.5, 1])
+    
+    with c_graf_funil:
+        com_erros = len(df_filtrado[df_filtrado['nota'] < 100])
+        funil_etapas = ['Total Avaliado', 'Avaliações c/ Erros', 'Contestações Abertas', 'Contestações Aceitas']
+        funil_valores = [len(df_filtrado), com_erros, total_cont, aceitas]
+        
+        fig_funil = go.Figure(go.Funnel(
+            y=funil_etapas,
+            x=funil_valores,
+            textinfo="value+percent initial",
+            marker={"color": ["#1f77b4", "#ff7f0e", "#d62728", "#2ca02c"]}
+        ))
+        fig_funil.update_layout(
+            title="🌪️ Funil de Qualidade", 
+            margin=dict(l=20, r=20, t=40, b=20),
+            paper_bgcolor='rgba(0,0,0,0)', 
+            font={'color': "white"}
+        )
+        st.plotly_chart(fig_funil, use_container_width=True)
+
+    with c_graf_donut:
+        if total_cont > 0:
+            df_status = df_cont_filtrado['status'].value_counts().reset_index()
+            df_status.columns = ['Status', 'Quantidade']
+            cores = {'Aceita': '#00cc66', 'Recusada': '#ff4b4b', 'Pendente': '#ffcc00'}
+            fig_pie = px.pie(
+                df_status, names='Status', values='Quantidade', 
+                hole=0.4, color='Status', color_discrete_map=cores,
+                title="⚖️ Status das Contestações"
+            )
+            fig_pie.update_layout(margin=dict(l=0, r=0, t=40, b=0), paper_bgcolor='rgba(0,0,0,0)', font={'color': "white"})
+            st.plotly_chart(fig_pie, use_container_width=True)
+
+    st.divider()
+
+    # --- GRÁFICO DE OFENSORES ---
     if 'detalhes' in df_filtrado.columns:
         erros_dict = {}
         for _, row in df_filtrado.iterrows():
             detalhes = row['detalhes']
             if isinstance(detalhes, dict):
                 for criterio, info in detalhes.items():
-                    # Compatibilidade: Checa se a nota está num dicionário (novo) ou solta (antigo)
                     nota_crit = info.get('nota', 'C') if isinstance(info, dict) else info
                     if nota_crit in ["NC", "NC Grave", "NGC"]:
                         erros_dict[criterio] = erros_dict.get(criterio, 0) + 1
         
         if erros_dict:
-            df_erros = pd.DataFrame(list(erros_dict.items()), columns=['Critério', 'Ocorrências'])
-            df_erros = df_erros.sort_values(by='Ocorrências', ascending=True)
-
+            df_erros = pd.DataFrame(list(erros_dict.items()), columns=['Critério', 'Ocorrências']).sort_values(by='Ocorrências', ascending=True)
             fig_pareto = px.bar(
                 df_erros, x='Ocorrências', y='Critério', orientation='h',
-                text='Ocorrências', color_discrete_sequence=['#ff4b4b']
+                text='Ocorrências', color_discrete_sequence=['#ff4b4b'],
+                title="📉 Principais Ofensores (Erros NC e NCG)"
             )
-            fig_pareto.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font={'color': "white"})
+            fig_pareto.update_layout(height=450, margin=dict(l=10, r=10, t=40, b=10), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font={'color': "white"})
             st.plotly_chart(fig_pareto, use_container_width=True)
-        else:
-            st.success("🎉 Nenhum erro encontrado neste período!")
 
-    # --- 6. GRÁFICO DE EVOLUÇÃO ---
-    st.write("##")
+    st.divider()
+
+    # --- GRÁFICO DE EVOLUÇÃO ---
     fig_evolucao = px.area(
         df_filtrado, x='criado_em', y='nota', 
-        markers=True, title="Evolução das Notas no Tempo",
+        markers=True, title="📈 Evolução das Notas no Tempo",
         labels={'criado_em': 'Data', 'nota': 'Nota (%)'},
         color_discrete_sequence=['#1f77b4']
     )
@@ -204,7 +237,7 @@ def render_dashboard():
     fig_evolucao.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font={'color': "white"})
     st.plotly_chart(fig_evolucao, use_container_width=True)
 
-    # --- 7. RANKING COMPLETO (TABELA) ---
+    # --- RANKING COMPLETO (TABELA) ---
     if nivel_usuario in ["ADMIN", "GESTAO", "AUDITOR"] and sdr_escolhido == "Ver Todos":
         st.write("##")
         st.subheader("📊 Ranking Completo (Prioridade: Volume)")

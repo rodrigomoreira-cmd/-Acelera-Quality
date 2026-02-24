@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import time
-import extra_streamlit_components as stx 
 from datetime import datetime, timedelta
 
 from auth import render_login
@@ -11,13 +10,65 @@ from contestacao import render_contestacao
 from cadastro import render_cadastro
 from meus_resultados import render_meus_resultados 
 from usuarios_gestao import render_usuario_gestao 
+
+# 👇 O NOME CORRETO DA FUNÇÃO FOI AJUSTADO AQUI 👇
 from meu_perfil import render_meu_perfil 
+
 from auditoria import render_auditoria 
 from relatorios import render_relatorios 
 from gestao_criterios import render_gestao_criterios 
+from matriz_decisao import render_pdi  
 from style import apply_custom_styles
 from database import get_all_records_db, supabase, buscar_contagem_notificacoes, limpar_todas_notificacoes, anular_monitoria_auditada, registrar_auditoria, remover_evidencia_monitoria
 
+# ==========================================================
+# 🔔 MODAL DE NOTIFICAÇÕES
+# ==========================================================
+@st.dialog("🔔 Central de Notificações")
+def modal_notificacoes(nome_usuario):
+    st.markdown("Acompanhe os seus avisos, resultados de PDI e contestações:")
+    try:
+        res = supabase.table("notificacoes").select("*").eq("usuario", nome_usuario).execute()
+        notifs = res.data if res.data else []
+        
+        if not notifs:
+            st.info("🎉 Você não tem notificações no momento.")
+        else:
+            notifs = sorted(notifs, key=lambda x: x.get('id', 0), reverse=True)
+            
+            for n in notifs:
+                lida = n.get('lida', False)
+                cor_borda = "#ff4b4b" if not lida else "gray"
+                icone = "🔴" if not lida else "⚪"
+                msg = n.get('mensagem', 'Nova notificação')
+                
+                st.markdown(f"""
+                    <div style='padding:12px; border-left:4px solid {cor_borda}; margin-bottom:8px; background-color:rgba(255,255,255,0.05); border-radius:5px;'>
+                        <span style='font-size:14px; color:white;'>{icone} {msg}</span>
+                    </div>
+                """, unsafe_allow_html=True)
+            
+        st.divider()
+        
+        c_limpar, c_lidas, c_fechar = st.columns(3)
+        
+        if c_lidas.button("✅ Lidas", use_container_width=True):
+            supabase.table("notificacoes").update({"lida": True}).eq("usuario", nome_usuario).execute()
+            st.rerun()
+            
+        if c_limpar.button("🗑️ Limpar", use_container_width=True):
+            limpar_todas_notificacoes(nome_usuario)
+            st.rerun()
+            
+        if c_fechar.button("❌ Fechar", use_container_width=True):
+            st.rerun()
+                
+    except Exception as e:
+        st.error(f"Erro ao carregar notificações: {e}")
+
+# ==========================================================
+# MODAL DE ANULAR AUDITORIA
+# ==========================================================
 @st.dialog("🗑️ Confirmar Anulação")
 def modal_anular(id_mon, sdr_nome):
     st.warning(f"Deseja excluir permanentemente a monitoria de **{sdr_nome}**?")
@@ -71,7 +122,7 @@ def render_historico_geral(nivel, nome_completo):
 
     df_exibicao['Data'] = df_exibicao['criado_em'].dt.strftime('%d/%m/%Y %H:%M')
     
-    if nivel not in ["ADMIN", "GESTAO", "AUDITOR"]:
+    if nivel not in ["ADMIN", "GESTAO", "AUDITOR", "GERENCIA"]:
         df_exibicao = df_exibicao[df_exibicao['sdr'].str.strip().str.upper() == nome_completo.strip().upper()].copy()
     else:
         c_busca, _ = st.columns([1, 1])
@@ -159,38 +210,12 @@ def main():
     st.set_page_config(layout="wide", page_title="Acelera Quality", page_icon="🚀")
     st.markdown("<style>section[data-testid='stSidebar'] { display: block !important; visibility: visible !important; }</style>", unsafe_allow_html=True)
 
-    cookie_manager = stx.CookieManager(key="cookie_main_handler")
-
     if "authenticated" not in st.session_state: st.session_state.authenticated = False
     if "departamento_selecionado" not in st.session_state: st.session_state.departamento_selecionado = "Todos"
     if "current_page" not in st.session_state: st.session_state.current_page = "DASHBOARD"
-    if "force_logout" not in st.session_state: st.session_state.force_logout = False
 
-    # ==========================================================
-    # 🛡️ ESCUDO ANTI-SEQUESTRO DE SESSÃO
-    # ==========================================================
     if not st.session_state.authenticated:
-        # Se o usuário acabou de digitar a senha (Fase 1 aprovada), ignoramos o cookie antigo!
-        if 'usuario_aprovado' not in st.session_state:
-            if not st.session_state.force_logout:
-                cookie_user = cookie_manager.get('user_token')
-                # Previne leituras falsas ou atrasadas do componente
-                if cookie_user and str(cookie_user).strip() not in ["", "None"]:
-                    try:
-                        res = supabase.table("usuarios").select("*").ilike("user", str(cookie_user)).execute()
-                        if res.data:
-                            u = res.data[0]
-                            if u.get('esta_ativo', True):
-                                st.session_state.authenticated = True
-                                st.session_state.user_nome = u['nome']
-                                st.session_state.user_login = u['user']
-                                st.session_state.nivel = str(u.get('nivel', 'USUARIO')).upper()
-                                st.session_state.departamento = u.get('departamento', 'SDR')
-                                st.session_state.foto_url = u.get('foto_url')
-                                registrar_auditoria("LOGIN (Automático)", "Sessão restaurada via cookie.", "N/A", u['nome'])
-                                st.rerun()
-                    except: pass
-        render_login(cookie_manager)
+        render_login()
         st.stop()
 
     apply_custom_styles()
@@ -204,23 +229,36 @@ def main():
         if foto_p: st.markdown(f"<div style='text-align:center;'><img src='{foto_p}' style='width:90px;height:90px;border-radius:50%;object-fit:cover;border:2px solid #ff4b4b;'></div>", unsafe_allow_html=True)
         else: st.markdown("<div style='text-align:center;font-size:50px;'>👤</div>", unsafe_allow_html=True)
 
+        if nivel == "ADMIN": rotulo_perfil = "ADMINISTRADOR"
+        elif nivel == "GERENCIA": rotulo_perfil = "GERÊNCIA"
+        else: rotulo_perfil = meu_dept
+
         st.markdown(f"<h3 style='text-align:center; margin-bottom: 0;'>{nome_completo}</h3>", unsafe_allow_html=True)
-        st.markdown(f"<div style='text-align: center; margin-top: 5px; margin-bottom: 15px;'><span style='background-color: #ff4b4b22; color: #ff4b4b; padding: 4px 15px; border-radius: 20px; font-size: 13px; font-weight: bold; border: 1px solid #ff4b4b44; text-transform: uppercase;'>{meu_dept}</span></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='text-align: center; margin-top: 5px; margin-bottom: 15px;'><span style='background-color: #ff4b4b22; color: #ff4b4b; padding: 4px 15px; border-radius: 20px; font-size: 13px; font-weight: bold; border: 1px solid #ff4b4b44; text-transform: uppercase;'>{rotulo_perfil}</span></div>", unsafe_allow_html=True)
         st.divider()
         
-        if nivel in ["ADMIN", "GESTAO", "AUDITOR"]:
+        if nivel in ["ADMIN", "AUDITOR", "GERENCIA"]:
             st.markdown("**🏢 Visão por Departamento**")
             opcoes_d = ["Todos", "SDR", "Especialista", "Venda de Ingresso", "Auditor"]
             st.session_state.departamento_selecionado = st.selectbox("Filtrar sistema para:", opcoes_d, index=opcoes_d.index(st.session_state.departamento_selecionado) if st.session_state.departamento_selecionado in opcoes_d else 0)
         else:
             st.session_state.departamento_selecionado = meu_dept
 
+        # ==========================================================
+        # 🔔 GATILHO DO MODAL DE NOTIFICAÇÕES
+        # ==========================================================
         res_n = buscar_contagem_notificacoes(nome_completo, nivel)
-        if int(res_n if res_n else 0) > 0 and nivel != "GESTAO": 
-            if st.button(f"🔔 {int(res_n)} Pendências", use_container_width=True, type="primary"):
-                limpar_todas_notificacoes(nome_completo)
-                st.session_state.current_page = "CONTESTACAO"
-                st.rerun()
+        qtd_notificacoes = int(res_n if res_n else 0)
+        
+        if nivel not in ["GESTAO", "GERENCIA"]: 
+            # Define o tipo de botão (Vermelho chamativo se tiver pendência)
+            tipo_btn = "primary" if qtd_notificacoes > 0 else "secondary"
+            texto_btn = f"🔔 {qtd_notificacoes} Nova(s) Notificação(ões)" if qtd_notificacoes > 0 else "🔔 Notificações"
+            
+            if st.button(texto_btn, use_container_width=True, type=tipo_btn):
+                # Ao clicar, abre o modal de notificações sem mudar de página
+                modal_notificacoes(nome_completo)
+                
         st.divider()
 
         def menu(label, target):
@@ -230,17 +268,25 @@ def main():
 
         menu("📊 DASHBOARD", "DASHBOARD")
         
-        if nivel not in ["ADMIN", "GESTAO", "AUDITOR"]:
+        # Lógica de menus baseada no nível de acesso
+        if nivel not in ["ADMIN", "GESTAO", "AUDITOR", "GERENCIA"]:
+            # VISÃO DO SDR / ESPECIALISTA / VENDA DE INGRESSO
             menu("⚖️ CONTESTAR NOTA", "CONTESTACAO")
             menu("📈 MEUS RESULTADOS", "MEUS_RESULTADOS")
             menu("📚 HISTÓRICO", "HISTORICO")
+            menu("🎯 MEU PDI", "PDI")  
         else:
+            # VISÃO DA LIDERANÇA
             menu("📝 NOVA MONITORIA", "MONITORIA")
             menu("⚖️ CONTESTAÇÕES", "CONTESTACAO")
             menu("📚 HISTÓRICO GERAL", "HISTORICO")
             menu("📋 RELATÓRIOS", "RELATORIOS")
-            menu("⚙️ CONFIG. CRITÉRIOS", "CONFIG_CRITERIOS")
-            if nivel in ["ADMIN", "GESTAO"]:
+            menu("🎯 MATRIZ DE DECISÃO", "PDI") 
+            
+            if nivel in ["ADMIN", "AUDITOR"]:
+                menu("⚙️ CONFIG. CRITÉRIOS", "CONFIG_CRITERIOS")
+            
+            if nivel in ["ADMIN", "GESTAO", "GERENCIA"]:
                 menu("👤 CADASTRAR USUÁRIO", "CADASTRO")
                 menu("👥 GESTÃO DE EQUIPE", "GESTAO_USUARIOS")
             if nivel == "ADMIN":
@@ -251,38 +297,18 @@ def main():
 
         st.divider()
         
-        # ==========================================================
-        # 🛡️ LOGOUT BLINDADO COM "SALA DE ESPERA" PARA O NAVEGADOR
-        # ==========================================================
         if st.session_state.get('logout_step'):
             st.warning("🔐 Deseja sair do sistema?")
             col_conf, col_canc = st.columns(2)
             if col_conf.button("Confirmar Saída", type="primary", use_container_width=True):
                 nome_saindo = st.session_state.get('user_nome', 'Desconhecido')
                 registrar_auditoria("LOGOUT", "Sessão encerrada.", "N/A", nome_saindo)
-                
-                # Envia o comando para o navegador destruir o cookie fantasma
-                try:
-                    cookie_manager.delete('user_token')
-                except Exception: pass
-                
-                # Entra na sala de espera
-                st.session_state.aguardando_limpeza = True
-                st.session_state.logout_step = False
+                st.session_state.clear()
                 st.rerun()
                 
             if col_canc.button("Cancelar", use_container_width=True):
                 st.session_state.logout_step = False
                 st.rerun()
-                
-        elif st.session_state.get('aguardando_limpeza'):
-            st.success("✅ Sessão encerrada. Navegador limpo.")
-            if st.button("Voltar ao Ecrã de Login", type="primary", use_container_width=True):
-                st.session_state.clear()
-                st.session_state.force_logout = True # Mantém o escudo erguido
-                st.rerun()
-            st.stop() # Impede de desenhar o resto do sistema
-            
         else:
             if st.button("Sair do Sistema", use_container_width=True):
                 st.session_state.logout_step = True
@@ -291,6 +317,7 @@ def main():
     page = st.session_state.current_page
     try:
         if page == "DASHBOARD": render_dashboard()
+        # 👇 E O RENDER DO PERFIL FOI AJUSTADO AQUI TAMBÉM 👇
         elif page == "PERFIL": render_meu_perfil()
         elif page == "CONTESTACAO": render_contestacao()
         elif page == "MEUS_RESULTADOS": render_meus_resultados()
@@ -301,6 +328,7 @@ def main():
         elif page == "GESTAO_USUARIOS": render_usuario_gestao()
         elif page == "CONFIG_CRITERIOS": render_gestao_criterios()
         elif page == "AUDITORIA": render_auditoria()
+        elif page == "PDI": render_pdi() 
     except Exception as e:
         st.error(f"Erro ao carregar página: {e}")
 

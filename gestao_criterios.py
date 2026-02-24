@@ -1,174 +1,198 @@
 import streamlit as st
 import pandas as pd
-# IMPORTANTE: registrar_auditoria adicionado aqui!
 from database import supabase, registrar_auditoria
+import time
 
 def render_gestao_criterios():
     st.title("⚙️ Configuração de Critérios")
-    st.markdown("Gerencie as perguntas que aparecem no checklist da monitoria.")
+    st.markdown("Gerencie as perguntas do checklist de monitoria (com pesos e travas) e as competências do PDI.")
 
-    # --- DEFINIÇÃO DAS CATEGORIAS ---
-    OPCOES_CATEGORIAS = [
-        "Nectar CRM",
-        "Ambos - Processo SDR",
-        "Identificar - Processo",
-        "Integração",
-        "Selene/Bot"
-    ]
-    
-    # --- OPÇÕES DE DEPARTAMENTO ---
-    OPCOES_DEPARTAMENTO = [
-        "SDR",
-        "Especialista",
-        "Venda de Ingresso",
-        "Auditor"
-    ]
+    # Listas globais para as duas abas
+    OPCOES_CATEGORIAS = ["Nectar CRM", "Ambos - Processo SDR", "Identificar - Processo", "Integração", "Selene/Bot"]
+    OPCOES_DEPARTAMENTO = ["SDR", "Especialista", "Venda de Ingresso", "Auditor", "Todos"]
 
-    # --- 1. ADICIONAR NOVO CRITÉRIO ---
-    with st.expander("➕ Adicionar Novo Critério", expanded=False):
-        with st.form("novo_item_form", clear_on_submit=True):
-            st.markdown("### Novo Item")
-            
-            c_nome, c_grupo, c_dept = st.columns([3, 1.5, 1.5])
-            nome = c_nome.text_input("Pergunta / Critério", placeholder="Ex: Preencheu o campo corretamente?")
-            
-            grupo = c_grupo.selectbox("Categoria", OPCOES_CATEGORIAS)
-            departamento = c_dept.selectbox("Departamento", OPCOES_DEPARTAMENTO)
-            
-            c_peso, c_submit = st.columns([1, 1])
-            peso = c_peso.number_input("Peso na Nota", min_value=1, max_value=100, value=1, step=1)
-            
-            c_submit.write("") 
-            c_submit.write("") 
-            
-            if c_submit.form_submit_button("💾 Salvar Critério", use_container_width=True, type="primary"):
-                if nome:
+    aba_qa, aba_pdi = st.tabs(["🎧 Critérios de Qualidade (QA)", "🎯 Critérios Comportamentais (PDI)"])
+
+    # ==========================================================
+    # ABA 1: CRITÉRIOS DE QUALIDADE (QA) - COM PESOS E FATAL
+    # ==========================================================
+    with aba_qa:
+        # --- 1. FORMULÁRIO DE ADIÇÃO ---
+        with st.expander("➕ Adicionar Novo Critério QA (Com Peso/Fatal)", expanded=False):
+            with st.form("novo_item_qa_form", clear_on_submit=True):
+                st.markdown("### Novo Item de Avaliação")
+                
+                nome = st.text_input("Pergunta / Critério", placeholder="Ex: Confirmou os dados de contato?")
+                
+                c_grupo, c_dept = st.columns(2)
+                grupo = c_grupo.selectbox("Categoria", OPCOES_CATEGORIAS)
+                departamento = c_dept.selectbox("Departamento Destino", OPCOES_DEPARTAMENTO)
+                
+                st.divider()
+                st.markdown("#### ⚖️ Inteligência do Critério")
+                col_p, col_f = st.columns([2, 1])
+                
+                peso = col_p.select_slider(
+                    "Peso do Item (Importância)",
+                    options=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+                    value=1,
+                    help="Quanto maior o peso, maior o impacto na nota se for marcado como Não Conforme."
+                )
+                
+                eh_fatal = col_f.checkbox(
+                    "🔴 ITEM FATAL", 
+                    help="⚠️ ATENÇÃO: Se o colaborador for avaliado como 'NC' neste item, a nota será 0 AUTOMATICAMENTE."
+                )
+                
+                desc_ajuda = st.text_area("Guia para o Auditor (O que observar?)", placeholder="Descreva aqui o que valida este item como Conforme.")
+
+                if st.form_submit_button("💾 Salvar Critério QA", use_container_width=True, type="primary"):
+                    if nome:
+                        try:
+                            payload = {
+                                "nome": nome, 
+                                "descricao": desc_ajuda,
+                                "grupo": grupo, 
+                                "departamento": departamento, 
+                                "peso": int(peso), 
+                                "eh_fatal": bool(eh_fatal),
+                                "esta_ativo": True
+                            }
+                            supabase.table("criterios_qa").insert(payload).execute()
+                            
+                            registrar_auditoria(
+                                acao="CRIAR CRITÉRIO QA", 
+                                detalhes=f"Criou critério '{nome}' (Peso: {peso}, Fatal: {eh_fatal})"
+                            )
+                            
+                            st.toast(f"✅ Critério adicionado!", icon="✨")
+                            time.sleep(1)
+                            st.rerun()
+                        except Exception as e: 
+                            st.error(f"Erro ao salvar: {e}")
+                    else: 
+                        st.warning("⚠️ O nome do critério é obrigatório.")
+
+        st.divider()
+
+        # --- 2. EDITOR EM MASSA (QA) ---
+        st.subheader("📝 Gerenciar e Editar Critérios Ativos")
+        try:
+            res = supabase.table("criterios_qa").select("*").order("grupo", desc=False).execute()
+            df = pd.DataFrame(res.data) if res.data else pd.DataFrame()
+        except Exception as e:
+            st.error(f"Erro ao buscar: {e}")
+            df = pd.DataFrame()
+        
+        if not df.empty:
+            df_editado = st.data_editor(
+                df[['id', 'grupo', 'nome', 'peso', 'eh_fatal', 'esta_ativo', 'departamento']],
+                column_config={
+                    "id": st.column_config.TextColumn("ID", disabled=True),
+                    "grupo": st.column_config.SelectboxColumn("Categoria", options=OPCOES_CATEGORIAS, required=True),
+                    "nome": st.column_config.TextColumn("Critério / Pergunta", width="large", required=True),
+                    "peso": st.column_config.NumberColumn("Peso", min_value=1, max_value=10, step=1),
+                    "eh_fatal": st.column_config.CheckboxColumn("🚨 Fatal?"),
+                    "esta_ativo": st.column_config.CheckboxColumn("Ativo?"),
+                    "departamento": st.column_config.SelectboxColumn("Dept", options=OPCOES_DEPARTAMENTO)
+                },
+                hide_index=True, 
+                use_container_width=True,
+                num_rows="dynamic"
+            )
+
+            if st.button("🔄 Aplicar Alterações em Massa (QA)", type="primary", use_container_width=True):
+                with st.spinner("Sincronizando com o banco de dados..."):
                     try:
-                        payload = {
-                            "nome_criterio": nome, 
-                            "grupo": grupo,
-                            "departamento": departamento, 
-                            "peso": int(peso),
-                            "ativo": True
-                        }
-                        supabase.table("config_criterios").insert(payload).execute()
+                        for _, row in df_editado.iterrows():
+                            if pd.notna(row.get('id')):
+                                upd_payload = {
+                                    "nome": str(row["nome"]),
+                                    "grupo": str(row["grupo"]),
+                                    "peso": int(row["peso"]),
+                                    "eh_fatal": bool(row["eh_fatal"]),
+                                    "esta_ativo": bool(row["esta_ativo"]),
+                                    "departamento": str(row["departamento"])
+                                }
+                                supabase.table("criterios_qa").update(upd_payload).eq("id", row["id"]).execute()
                         
-                        # --- 📸 LOG GRAVANDO CRIAÇÃO DO CRITÉRIO ---
-                        registrar_auditoria(
-                            acao="CRIAR CRITÉRIO",
-                            detalhes=f"Criou o critério '{nome}' para a equipe '{departamento}' com peso {int(peso)}."
-                        )
-                        
-                        st.toast(f"✅ Item adicionado para {departamento}: {nome}", icon="✨")
+                        registrar_auditoria("EDIÇÃO EM MASSA QA", "Atualizou pesos e status dos critérios.")
+                        st.toast("✅ Base de critérios atualizada!", icon="💾")
+                        time.sleep(1)
                         st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro ao salvar: {e}")
-                else:
-                    st.warning("⚠️ O nome do critério é obrigatório.")
+                    except Exception as e: 
+                        st.error(f"Erro na atualização: {e}")
+        else:
+            st.info("Nenhum critério cadastrado na tabela 'criterios_qa'.")
 
-    st.divider()
-
-    # --- 2. EDITOR EM MASSA ---
-    st.subheader("📝 Editar Itens Ativos")
-    
-    try:
-        res = supabase.table("config_criterios").select("*").order("id", desc=True).execute()
-        df = pd.DataFrame(res.data) if res.data else pd.DataFrame()
-    except Exception as e:
-        st.error(f"Erro ao buscar critérios: {e}")
-        df = pd.DataFrame()
-    
-    if not df.empty:
-        colunas_necessarias = ['id', 'departamento', 'grupo', 'nome_criterio', 'peso', 'ativo']
-        
-        cols_existentes = [c for c in colunas_necessarias if c in df.columns]
-        df_safe = df[cols_existentes].copy()
-        
-        if 'peso' in df_safe.columns:
-            df_safe['peso'] = pd.to_numeric(df_safe['peso'], errors='coerce').fillna(1).astype('Int64')
-        if 'id' in df_safe.columns:
-            df_safe['id'] = pd.to_numeric(df_safe['id'], errors='coerce').astype('Int64')
-
-        if 'departamento' in df_safe.columns:
-            df_safe = df_safe.sort_values(by=['departamento', 'grupo'])
-        elif 'grupo' in df_safe.columns:
-            df_safe = df_safe.sort_values(by=['grupo'])
-
-        df_editado = st.data_editor(
-            df_safe,
-            column_config={
-                "id": st.column_config.NumberColumn("ID", disabled=True, width="small"),
-                "departamento": st.column_config.SelectboxColumn(
-                    "Departamento",
-                    width="small",
-                    options=OPCOES_DEPARTAMENTO,
-                    required=True
-                ),
-                "grupo": st.column_config.SelectboxColumn(
-                    "Categoria",
-                    width="medium",
-                    options=OPCOES_CATEGORIAS,
-                    required=True
-                ),
-                "nome_criterio": st.column_config.TextColumn("Pergunta do Checklist", width="large", required=True),
-                "peso": st.column_config.NumberColumn("Peso", min_value=1, max_value=100, step=1, required=True),
-                "ativo": st.column_config.CheckboxColumn("Ativo?")
-            },
-            hide_index=True,
-            use_container_width=True,
-            num_rows="dynamic"
-        )
-
-        st.caption("💡 Dica: Edite diretamente na tabela e clique em salvar abaixo.")
-
-        if st.button("🔄 Aplicar Alterações em Massa", type="primary", use_container_width=True):
-            with st.spinner("Atualizando banco de dados..."):
-                try:
-                    for index, row in df_editado.iterrows():
-                        peso_bruto = row.get("peso")
-                        peso_seguro = int(float(str(peso_bruto))) if pd.notna(peso_bruto) else 1
-                        
-                        if pd.notna(row.get('id')):
-                            id_seguro = int(float(str(row["id"])))
-                            
-                            payload_update = {
-                                "nome_criterio": str(row["nome_criterio"]),
-                                "grupo": str(row["grupo"]),
-                                "peso": peso_seguro,
-                                "ativo": bool(row["ativo"])
+    # ==========================================================
+    # ABA 2: CRITÉRIOS COMPORTAMENTAIS (PDI)
+    # ==========================================================
+    with aba_pdi:
+        with st.expander("➕ Adicionar Nova Soft Skill (PDI)", expanded=False):
+            with st.form("novo_pdi_form", clear_on_submit=True):
+                st.markdown("### Nova Competência Comportamental")
+                
+                # --- MELHORIA: ADICIONADO FILTRO DE DEPARTAMENTO AQUI ---
+                c_nome_pdi, c_dept_pdi = st.columns([2, 1])
+                nome_pdi = c_nome_pdi.text_input("Nome da Soft Skill", placeholder="Ex: Inteligência Emocional")
+                dept_pdi = c_dept_pdi.selectbox("Departamento", OPCOES_DEPARTAMENTO, index=len(OPCOES_DEPARTAMENTO)-1) # Padrão "Todos"
+                
+                desc_pdi = st.text_input("Descrição Curta", placeholder="Como o gestor deve avaliar?")
+                
+                if st.form_submit_button("💾 Salvar Competência PDI", type="primary"):
+                    if nome_pdi:
+                        try:
+                            # --- MELHORIA: PAYLOAD AGORA SALVA O DEPARTAMENTO ---
+                            payload_pdi = {
+                                "nome": nome_pdi.strip(), 
+                                "descricao": desc_pdi.strip(), 
+                                "departamento": dept_pdi, 
+                                "esta_ativo": True
                             }
-                            if 'departamento' in row:
-                                payload_update['departamento'] = str(row['departamento'])
+                            supabase.table("criterios_comportamentais").insert(payload_pdi).execute()
+                            registrar_auditoria("CRIAR CRITÉRIO PDI", f"Adicionou Skill: {nome_pdi}")
+                            st.toast(f"✅ Skill adicionada!", icon="🎯")
+                            time.sleep(1)
+                            st.rerun()
+                        except Exception as e: st.error(f"Erro: {e}")
+                    else: st.warning("⚠️ Nome obrigatório.")
 
-                            supabase.table("config_criterios").update(payload_update).eq("id", id_seguro).execute()
-                            
-                        elif pd.isna(row.get('id')) and row.get('nome_criterio'):
-                            payload_insert = {
-                                "nome_criterio": str(row["nome_criterio"]),
-                                "grupo": str(row["grupo"]),
-                                "peso": peso_seguro,
-                                "ativo": bool(row.get("ativo", True))
+        st.divider()
+        st.subheader("📝 Editar Competências do PDI")
+        try:
+            res_comp = supabase.table("criterios_comportamentais").select("*").order("nome").execute()
+            df_comp = pd.DataFrame(res_comp.data) if res_comp.data else pd.DataFrame()
+            
+            if not df_comp.empty:
+                # Caso a coluna departamento não exista no pandas por ser muito velha, criamos provisória
+                if 'departamento' not in df_comp.columns:
+                    df_comp['departamento'] = 'Todos'
+
+                # --- MELHORIA: ADICIONADO 'DEPARTAMENTO' NO EDITOR EM MASSA ---
+                df_edit_comp = st.data_editor(
+                    df_comp[['id', 'nome', 'descricao', 'departamento', 'esta_ativo']],
+                    column_config={
+                        "id": st.column_config.TextColumn("ID", disabled=True),
+                        "nome": st.column_config.TextColumn("Nome da Skill", required=True),
+                        "departamento": st.column_config.SelectboxColumn("Dept", options=OPCOES_DEPARTAMENTO),
+                        "esta_ativo": st.column_config.CheckboxColumn("Ativo?")
+                    },
+                    hide_index=True, use_container_width=True
+                )
+
+                if st.button("🔄 Salvar Alterações em Massa (PDI)", type="primary", use_container_width=True):
+                    for _, r in df_edit_comp.iterrows():
+                        if pd.notna(r.get('id')):
+                            p_pdi = {
+                                "nome": str(r["nome"]), 
+                                "descricao": str(r.get("descricao", "")), 
+                                "departamento": str(r.get("departamento", "Todos")),
+                                "esta_ativo": bool(r["esta_ativo"])
                             }
-                            if 'departamento' in row:
-                                payload_insert['departamento'] = str(row['departamento'])
-                            else:
-                                payload_insert['departamento'] = "SDR"
-
-                            supabase.table("config_criterios").insert(payload_insert).execute()
-                    
-                    # --- 📸 LOG GRAVANDO ALTERAÇÃO EM MASSA ---
-                    registrar_auditoria(
-                        acao="EDIÇÃO DE CRITÉRIOS",
-                        detalhes="O gestor atualizou ou adicionou critérios através da tabela de edição em massa."
-                    )
-                    
-                    st.toast("✅ Configurações atualizadas com sucesso!", icon="💾")
-                    import time
+                            supabase.table("criterios_comportamentais").update(p_pdi).eq("id", r["id"]).execute()
+                    st.toast("✅ PDI Atualizado!")
                     time.sleep(1)
                     st.rerun()
-                    
-                except Exception as e:
-                    st.error(f"Erro ao atualizar: {e}")
-
-    else:
-        st.info("Nenhum critério encontrado. Adicione o primeiro item acima!")
+        except Exception as e:
+            st.info(f"Crie o primeiro critério de PDI acima. (Erro: {e})")

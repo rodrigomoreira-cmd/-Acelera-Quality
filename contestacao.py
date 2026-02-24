@@ -1,8 +1,44 @@
 import streamlit as st
 import pandas as pd
 import time
+import calendar
+import pytz
 from datetime import datetime
 from database import supabase, get_all_records_db, registrar_auditoria
+
+# ==========================================================
+# ⏱️ LÓGICA DE DATA LIMITE (JANELA DE CONTESTAÇÃO)
+# ==========================================================
+def verificar_janela_aberta():
+    """
+    Retorna True se estivermos nos primeiros 3 dias do mês 
+    ou nos últimos 3 dias do mês atual, e informa sempre a data de expiração.
+    """
+    fuso = pytz.timezone('America/Sao_Paulo')
+    hoje = datetime.now(fuso).date()
+    dia_atual = hoje.day
+    mes_atual = hoje.month
+    ano_atual = hoje.year
+    
+    # Descobre qual é o último dia do mês atual
+    _, ultimo_dia_mes = calendar.monthrange(ano_atual, mes_atual)
+    
+    # Define o dia em que a janela abre no final do mês
+    dia_abertura_fim_mes = ultimo_dia_mes - 3
+    
+    # Calcula o mês/ano seguinte para a expiração
+    mes_seguinte = mes_atual + 1 if mes_atual < 12 else 1
+    ano_seguinte = ano_atual if mes_atual < 12 else ano_atual + 1
+    
+    if dia_atual <= 3:
+        return True, f"A janela de contestação está ABERTA. O prazo encerra dia 03/{mes_atual:02d}/{ano_atual} às 23:59."
+    
+    elif dia_atual >= dia_abertura_fim_mes:
+        return True, f"A janela de contestação está ABERTA. O prazo encerra dia 03/{mes_seguinte:02d}/{ano_seguinte} às 23:59."
+    
+    else:
+        dias_faltantes = dia_abertura_fim_mes - dia_atual
+        return False, f"⚠️ Fora do prazo. A próxima janela abre dia {dia_abertura_fim_mes:02d}/{mes_atual:02d} e encerra dia 03/{mes_seguinte:02d}/{ano_seguinte}."
 
 def render_contestacao():
     nivel = st.session_state.get('nivel', 'USUARIO')
@@ -35,8 +71,18 @@ def render_contestacao():
     # ==========================================================
     # 👤 VISÃO DO COLABORADOR (SDR / Especialista / Ingresso)
     # ==========================================================
-    if nivel not in ["AUDITOR", "GESTAO", "ADMIN"]:
+    if nivel not in ["AUDITOR", "GESTAO", "ADMIN", "GERENCIA"]:
         st.markdown("Aqui você pode solicitar a revisão de uma nota caso discorde da avaliação recebida.")
+        
+        # --- VERIFICAÇÃO DA JANELA DE TEMPO ---
+        janela_aberta, msg_janela = verificar_janela_aberta()
+        
+        if janela_aberta:
+            st.success(f"✅ {msg_janela}")
+        else:
+            st.error(msg_janela)
+            st.info("A criação de novas contestações está temporariamente desativada.")
+            
         st.divider()
 
         minhas_monitorias = df_monitorias[
@@ -63,100 +109,104 @@ def render_contestacao():
         with col1:
             st.subheader("📝 Abrir Nova Contestação")
             
-            if disponiveis.empty:
-                st.info("Você já contestou todas as monitorias disponíveis ou não possui novas avaliações.")
+            # Trava o formulário se a janela estiver fechada
+            if not janela_aberta:
+                st.warning("🔒 O formulário de envio está bloqueado. Aguarde a abertura da próxima janela.")
             else:
-                opcoes_mon = {
-                    f"📅 {row['criado_em'].strftime('%d/%m/%Y às %H:%M')} | Nota: {row['nota']}% | Auditor: {row['monitor_responsavel']}": row['id'] 
-                    for _, row in disponiveis.iterrows()
-                }
-                
-                escolha_label = st.selectbox("Selecione a Avaliação:", [""] + list(opcoes_mon.keys()))
-                
-                if escolha_label:
-                    id_sel = opcoes_mon[escolha_label]
-                    mon_row = disponiveis[disponiveis['id'] == id_sel].iloc[0]
-                    auditor_nome = mon_row['monitor_responsavel']
-
-                    try:
-                        res_aud = supabase.table("usuarios").select("foto_url").eq("nome", auditor_nome).execute()
-                        foto_auditor = res_aud.data[0].get('foto_url') if res_aud.data else None
-                    except:
-                        foto_auditor = None
-
-                    st.markdown("<br>", unsafe_allow_html=True)
+                if disponiveis.empty:
+                    st.info("Você já contestou todas as monitorias disponíveis ou não possui novas avaliações.")
+                else:
+                    opcoes_mon = {
+                        f"📅 {row['criado_em'].strftime('%d/%m/%Y às %H:%M')} | Nota: {row['nota']}% | Auditor: {row['monitor_responsavel']}": row['id'] 
+                        for _, row in disponiveis.iterrows()
+                    }
                     
-                    with st.container(border=True):
-                        c_foto, c_info = st.columns([1, 4])
-                        with c_foto:
-                            if foto_auditor:
-                                st.markdown(f'<img src="{foto_auditor}" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid #ff4b4b;">', unsafe_allow_html=True)
-                            else:
-                                st.markdown('<div style="font-size: 60px;">🕵️</div>', unsafe_allow_html=True)
+                    escolha_label = st.selectbox("Selecione a Avaliação:", [""] + list(opcoes_mon.keys()))
+                    
+                    if escolha_label:
+                        id_sel = opcoes_mon[escolha_label]
+                        mon_row = disponiveis[disponiveis['id'] == id_sel].iloc[0]
+                        auditor_nome = mon_row['monitor_responsavel']
+
+                        try:
+                            res_aud = supabase.table("usuarios").select("foto_url").eq("nome", auditor_nome).execute()
+                            foto_auditor = res_aud.data[0].get('foto_url') if res_aud.data else None
+                        except:
+                            foto_auditor = None
+
+                        st.markdown("<br>", unsafe_allow_html=True)
                         
-                        with c_info:
-                            st.markdown(f"#### Avaliador: {auditor_nome}")
-                            st.markdown(f"**Nota:** `{mon_row['nota']}%`")
+                        with st.container(border=True):
+                            c_foto, c_info = st.columns([1, 4])
+                            with c_foto:
+                                if foto_auditor:
+                                    st.markdown(f'<img src="{foto_auditor}" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid #ff4b4b;">', unsafe_allow_html=True)
+                                else:
+                                    st.markdown('<div style="font-size: 60px;">🕵️</div>', unsafe_allow_html=True)
                             
-                        obs = mon_row.get('observacoes', '')
-                        if pd.notna(obs) and obs.strip():
-                            st.info(f"💬 **Mensagem do Auditor:** {obs}")
+                            with c_info:
+                                st.markdown(f"#### Avaliador: {auditor_nome}")
+                                st.markdown(f"**Nota:** `{mon_row['nota']}%`")
+                                
+                            obs = mon_row.get('observacoes', '')
+                            if pd.notna(obs) and obs.strip():
+                                st.info(f"💬 **Mensagem do Auditor:** {obs}")
 
-                    detalhes = mon_row.get('detalhes', {})
-                    erros_encontrados = 0
-                    
-                    st.markdown("#### 🚨 Pontos de Melhoria Apontados")
-                    
-                    if detalhes and isinstance(detalhes, dict):
-                        for item, info in detalhes.items():
-                            if isinstance(info, dict):
-                                n = info.get('nota', '')
-                                if n in ["NC", "NGC", "NC Grave"]:
-                                    erros_encontrados += 1
-                                    with st.expander(f"❌ **{item}** (Penalidade: {n})", expanded=True):
-                                        st.write(f"**Motivo do Erro:** {info.get('comentario', 'Sem justificativa.')}")
-                                        
-                                        if info.get('evidencia_anexada'):
-                                            url_imagem = info.get('url_arquivo')
-                                            nome_arquivo = info.get('arquivo', 'Anexo')
-                                            if url_imagem:
-                                                st.image(url_imagem, caption=f"Evidência: {nome_arquivo}", use_container_width=True)
-                                                st.markdown(f"🔗 [Clique aqui para abrir a imagem original]({url_imagem})")
-                                            else:
-                                                st.warning(f"⚠️ O arquivo `{nome_arquivo}` foi registado, mas a exibição falhou.")
-                    
-                    if erros_encontrados == 0:
-                        st.success("✨ Nenhum erro grave (NC/NGC) detalhado nesta monitoria.")
-
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    with st.form("form_envio_contestacao", clear_on_submit=True):
-                        st.markdown("##### ✍️ Sua Defesa")
-                        motivo_sdr = st.text_area("Justificativa (Obrigatório):", height=120, placeholder="Explique por que você discorda da avaliação destes itens. Se possível, cite o minuto da gravação...")
+                        detalhes = mon_row.get('detalhes', {})
+                        erros_encontrados = 0
                         
-                        if st.form_submit_button("🚀 Enviar Contestação", type="primary", use_container_width=True):
-                            if not motivo_sdr or len(motivo_sdr) < 10:
-                                st.warning("⚠️ Escreva uma justificativa clara (mínimo de 10 caracteres).")
-                            else:
-                                try:
-                                    payload = {
-                                        "monitoria_id": id_sel,
-                                        "motivo": motivo_sdr,
-                                        "status": "Pendente",
-                                        "resposta_admin": "",
-                                        "visualizada": False
-                                    }
-                                    coluna_nome_bd = 'sdr_nome' if df_contestacoes is not None and 'sdr_nome' in df_contestacoes.columns else 'sdr'
-                                    payload[coluna_nome_bd] = nome_completo
+                        st.markdown("#### 🚨 Pontos de Melhoria Apontados")
+                        
+                        if detalhes and isinstance(detalhes, dict):
+                            for item, info in detalhes.items():
+                                if isinstance(info, dict):
+                                    n = info.get('nota', '')
+                                    if n in ["NC", "NGC", "NC Grave"]:
+                                        erros_encontrados += 1
+                                        with st.expander(f"❌ **{item}** (Penalidade: {n})", expanded=True):
+                                            st.write(f"**Motivo do Erro:** {info.get('comentario', 'Sem justificativa.')}")
+                                            
+                                            if info.get('evidencia_anexada'):
+                                                url_imagem = info.get('url_arquivo')
+                                                nome_arquivo = info.get('arquivo', 'Anexo')
+                                                if url_imagem:
+                                                    st.image(url_imagem, caption=f"Evidência: {nome_arquivo}", use_container_width=True)
+                                                    st.markdown(f"🔗 [Clique aqui para abrir a imagem original]({url_imagem})")
+                                                else:
+                                                    st.warning(f"⚠️ O arquivo `{nome_arquivo}` foi registado, mas a exibição falhou.")
+                        
+                        if erros_encontrados == 0:
+                            st.success("✨ Nenhum erro grave (NC/NGC) detalhado nesta monitoria.")
+
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        with st.form("form_envio_contestacao", clear_on_submit=True):
+                            st.markdown("##### ✍️ Sua Defesa")
+                            motivo_sdr = st.text_area("Justificativa (Obrigatório):", height=120, placeholder="Explique por que você discorda da avaliação destes itens. Se possível, cite o minuto da gravação...")
+                            
+                            if st.form_submit_button("🚀 Enviar Contestação", type="primary", use_container_width=True):
+                                if not motivo_sdr or len(motivo_sdr) < 10:
+                                    st.warning("⚠️ Escreva uma justificativa clara (mínimo de 10 caracteres).")
+                                else:
+                                    try:
+                                        payload = {
+                                            "monitoria_id": id_sel,
+                                            "motivo": motivo_sdr,
+                                            "status": "Pendente",
+                                            "resposta_admin": "",
+                                            "visualizada": False
+                                        }
+                                        coluna_nome_bd = 'sdr_nome' if df_contestacoes is not None and 'sdr_nome' in df_contestacoes.columns else 'sdr'
+                                        payload[coluna_nome_bd] = nome_completo
+                                            
+                                        supabase.table("contestacoes").insert(payload).execute()
+                                        registrar_auditoria("ABERTURA DE CONTESTAÇÃO", f"Abriu contestação para a avaliação de {auditor_nome}.", nome_completo)
                                         
-                                    supabase.table("contestacoes").insert(payload).execute()
-                                    registrar_auditoria("ABERTURA DE CONTESTAÇÃO", f"Abriu contestação para a avaliação de {auditor_nome}.", nome_completo)
-                                    
-                                    st.success("✅ Contestação enviada para a equipa de qualidade!")
-                                    time.sleep(1.5)
-                                    get_all_records_db.clear()
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Erro ao salvar: {e}")
+                                        st.success("✅ Contestação enviada para a equipa de qualidade!")
+                                        time.sleep(1.5)
+                                        get_all_records_db.clear()
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Erro ao salvar: {e}")
 
         # --- LADO DIREITO: HISTÓRICO DE CONTESTAÇÕES ---
         with col2:
@@ -193,16 +243,17 @@ def render_contestacao():
     # ==========================================================
     # 🛡️ VISÃO DA LIDERANÇA (AUDITOR / GESTOR / ADMIN)
     # ==========================================================
-    elif nivel in ["AUDITOR", "GESTAO", "ADMIN"]:
+    elif nivel in ["AUDITOR", "GESTAO", "ADMIN", "GERENCIA"]:
         st.markdown(f"**Caixa de Entrada - Equipe:** `{dept_selecionado}`")
+        
+        # --- MOSTRA O PRAZO ATUAL PARA A LIDERANÇA ---
+        _, msg_janela = verificar_janela_aberta()
+        st.info(f"ℹ️ **Status do Mês:** {msg_janela}")
 
         if df_contestacoes is None or df_contestacoes.empty:
             st.success("🎉 Nenhuma contestação registrada no momento.")
             return
 
-        # -----------------------------------------------------------------
-        # CORREÇÃO CRÍTICA AQUI: O 'sdr' foi adicionado nas colunas mescladas
-        # -----------------------------------------------------------------
         colunas_necessarias = ['id', 'sdr', 'departamento', 'nota', 'link_selene', 'link_nectar', 'detalhes', 'monitor_responsavel']
         colunas_existentes = [c for c in colunas_necessarias if c in df_monitorias.columns]
 
@@ -229,16 +280,23 @@ def render_contestacao():
                     auditor_original = row.get('monitor_responsavel', 'Desconhecido')
 
                     # -----------------------------------------------------------------
-                    # BUSCA BLINDADA DO NOME DO COLABORADOR
+                    # BUSCA BLINDADA DO NOME DO COLABORADOR E DATA
                     # -----------------------------------------------------------------
                     nome_colaborador = "Desconhecido"
-                    # Procura o nome em todas as colunas geradas pelo merge
                     for campo in ['sdr_y', 'sdr_x', 'sdr', 'sdr_nome']:
                         if campo in row.index and pd.notna(row[campo]) and str(row[campo]).strip().lower() != "none":
                             nome_colaborador = str(row[campo])
                             break
+                            
+                    # Resgata a data em que a contestação foi criada
+                    data_raw = row.get('criado_em_x', row.get('criado_em'))
+                    if pd.notna(data_raw):
+                        data_formatada = pd.to_datetime(data_raw).strftime('%d/%m/%Y %H:%M')
+                    else:
+                        data_formatada = "Data N/D"
 
-                    with st.expander(f"🚨 Colaborador: {nome_colaborador} | Avaliador Orig: {auditor_original} | Nota: {nota_limpa}%", expanded=True):
+                    # Cabeçalho atualizado COM A DATA 📅
+                    with st.expander(f"📅 {data_formatada} | 🚨 Colaborador: {nome_colaborador} | Avaliador Orig: {auditor_original} | Nota: {nota_limpa}%", expanded=True):
                         col_l, col_r = st.columns([1, 1])
                         
                         with col_l:
@@ -284,6 +342,21 @@ def render_contestacao():
             with aba_h:
                 julgadas = df_completo[df_completo['status'] != "Pendente"]
                 if not julgadas.empty:
-                    # Busca segura para exibir na tabela de histórico
                     col_exib = 'sdr_y' if 'sdr_y' in julgadas.columns else ('sdr_x' if 'sdr_x' in julgadas.columns else ('sdr' if 'sdr' in julgadas.columns else 'sdr_nome'))
-                    st.dataframe(julgadas[[col_exib, 'status', 'resposta_admin']], use_container_width=True, hide_index=True)
+                    
+                    # Formata a data para a tabela de histórico (opcional, para ficar mais limpo)
+                    if 'criado_em_x' in julgadas.columns:
+                        julgadas['Data_Vis'] = pd.to_datetime(julgadas['criado_em_x']).dt.strftime('%d/%m/%Y')
+                    else:
+                        julgadas['Data_Vis'] = "-"
+                        
+                    st.dataframe(
+                        julgadas[['Data_Vis', col_exib, 'status', 'resposta_admin']], 
+                        column_config={
+                            "Data_Vis": "Data",
+                            col_exib: "Colaborador",
+                            "status": "Status",
+                            "resposta_admin": "Feedback"
+                        },
+                        use_container_width=True, hide_index=True
+                    )

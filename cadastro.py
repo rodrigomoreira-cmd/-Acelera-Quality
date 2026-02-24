@@ -28,40 +28,58 @@ def render_cadastro():
         
         # --- LÓGICA DE RESTRIÇÃO DE NÍVEL ---
         if nivel_logado == "GESTAO":
-            # Gestão só pode cadastrar perfil operacional (USUARIO)
             opcoes_nivel = ["USUARIO"]
             st.info("💡 Como Gestor, você possui permissão para cadastrar apenas perfis operacionais (Usuários).")
+        elif nivel_logado == "GERENCIA":
+            opcoes_nivel = ["USUARIO", "GESTAO"]
+            st.info("💡 Como Gerência, pode cadastrar Usuários e Gestores.")
         else:
-            # Admin pode cadastrar qualquer um
-            opcoes_nivel = ["USUARIO", "GESTAO", "ADMIN", "AUDITOR"]
+            opcoes_nivel = ["USUARIO", "GESTAO", "GERENCIA", "AUDITOR", "ADMIN"]
         
         nivel_acesso = col5.selectbox("Nível de Permissão", options=opcoes_nivel, index=0)
         
-        # --- SELEÇÃO DE DEPARTAMENTO ---
-        opcoes_departamento = ["SDR", "Especialista", "Venda de Ingresso","Auditor"]
+        # --- SELEÇÃO DE DEPARTAMENTO E GESTOR ---
+        opcoes_departamento = ["SDR", "Especialista", "Venda de Ingresso", "Auditor"]
         departamento = col6.selectbox("Departamento da Equipe", options=opcoes_departamento, index=0)
+
+        # --- NOVO: BUSCA OS GESTORES ATIVOS NO BANCO ---
+        st.divider()
+        st.markdown("#### 🎯 Alocação de Equipe")
+        
+        # Se for um usuário comum, precisamos dizer quem é o chefe dele
+        if nivel_acesso == "USUARIO":
+            try:
+                # Busca quem tem nível GESTAO
+                res_gestores = supabase.table("usuarios").select("nome").eq("nivel", "GESTAO").execute()
+                lista_gestores = ["Sem Gestor"] + [g['nome'] for g in res_gestores.data]
+            except Exception:
+                lista_gestores = ["Sem Gestor"]
+                
+            # Se for um gestor criando a conta, já fixa o nome dele
+            if nivel_logado == "GESTAO":
+                gestor_escolhido = st.selectbox("Gestor Responsável", [admin_logado])
+            else:
+                gestor_escolhido = st.selectbox("Selecione o Gestor Responsável", lista_gestores)
+        else:
+            gestor_escolhido = None
+            st.caption("Apenas o nível 'USUARIO' precisa ser alocado a um Gestor específico.")
 
         st.divider()
         
         if st.form_submit_button("🚀 Finalizar Cadastro", type="primary"):
-            # 1. Validação de campos obrigatórios
             if not nome_completo or not user_prefix or not senha_pura:
                 st.error("⚠️ Preencha os campos obrigatórios (Nome, Usuário e Senha).")
             else:
                 try:
-                    # Limpeza e padronização
                     email_completo = f"{user_prefix.strip().lower()}@grupoacelerador.com.br"
                     
-                    # 2. Verifica duplicidade no banco
                     check = supabase.table("usuarios").select("user").eq("user", email_completo).execute()
                     
                     if check.data:
                         st.error(f"❌ O usuário '{email_completo}' já existe.")
                     else:
-                        # 3. Criptografia
                         senha_hash = hash_password(senha_pura)
 
-                        # 4. Preparação do Cadastro
                         payload = {
                             "nome": nome_completo.strip(),
                             "user": email_completo,
@@ -70,21 +88,19 @@ def render_cadastro():
                             "telefone": telefone.strip() if telefone else None,
                             "nivel": nivel_acesso,
                             "departamento": departamento,
+                            "gestor_responsavel": gestor_escolhido if gestor_escolhido != "Sem Gestor" else None,
                             "esta_ativo": True
                         }
                         
-                        # Salva no banco de usuários
                         supabase.table("usuarios").insert(payload).execute()
 
-                        # 5. --- 📸 LOG DE AUDITORIA ---
-                        # Aqui usamos a câmera de segurança atualizada para gravar quem foi cadastrado
                         registrar_auditoria(
                             acao="CADASTRO DE USUÁRIO",
                             colaborador_afetado=nome_completo.strip(),
-                            detalhes=f"Foi criado o login '{email_completo}' com o nível '{nivel_acesso}' para o departamento '{departamento}'."
+                            detalhes=f"Criou '{email_completo}' | Nível: '{nivel_acesso}' | Dept: '{departamento}' | Gestor: '{gestor_escolhido}'."
                         )
                         
-                        st.success(f"✅ {nome_completo.strip()} cadastrado com sucesso no time de {departamento}!")
+                        st.success(f"✅ {nome_completo.strip()} cadastrado com sucesso!")
                         st.balloons()
                         
                 except Exception as e:
