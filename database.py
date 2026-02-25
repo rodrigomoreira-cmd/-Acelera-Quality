@@ -3,6 +3,7 @@ import pandas as pd
 from supabase import create_client
 from datetime import datetime
 import pytz
+import time # <-- Adicionado para o Retry da rede
 
 # ==========================================================
 # 🔌 INICIALIZAÇÃO E TIMEZONE
@@ -74,16 +75,22 @@ def salvar_monitoria_auditada(dados):
         return False, str(e)
 
 # ==========================================================
-# 🔔 SISTEMA DE NOTIFICAÇÕES (UNIFICADO)
+# 🔔 SISTEMA DE NOTIFICAÇÕES (UNIFICADO E COM CACHE/RETRY)
 # ==========================================================
+@st.cache_data(ttl=15, show_spinner=False) # Segura as requisições por 15s
 def buscar_contagem_notificacoes(nome_usuario, nivel):
     if not nome_usuario or nome_usuario == "Usuário": return 0
-    try:
-        # Busca EXCLUSIVAMENTE notificações da tabela central unificada
-        res_notif = supabase.table("notificacoes").select("id", count="exact").eq("usuario", nome_usuario).eq("lida", False).execute()
-        return res_notif.count if res_notif.count else 0
-    except: 
-        return 0
+    
+    # Tenta buscar até 3 vezes (Resolve o Errno 11 instantaneamente)
+    for _ in range(3):
+        try:
+            # Busca EXCLUSIVAMENTE notificações da tabela central unificada
+            res_notif = supabase.table("notificacoes").select("id", count="exact").eq("usuario", nome_usuario).eq("lida", False).execute()
+            return res_notif.count if res_notif.count else 0
+        except Exception:
+            time.sleep(0.5) # Respira 0.5s e tenta de novo se a rede falhar
+            
+    return 0
 
 def limpar_todas_notificacoes(nome_usuario):
     try:
@@ -95,6 +102,7 @@ def limpar_todas_notificacoes(nome_usuario):
         supabase.table("notificacoes").update({"lida": True}).eq("usuario", nome_usuario).execute()
         
         get_all_records_db.clear()
+        buscar_contagem_notificacoes.clear() # Limpa o contador do sininho instantaneamente
     except: pass
 
 # ==========================================================
