@@ -19,51 +19,6 @@ from style import apply_custom_styles
 from database import get_all_records_db, supabase, buscar_contagem_notificacoes, limpar_todas_notificacoes, anular_monitoria_auditada, registrar_auditoria, remover_evidencia_monitoria
 
 # ==========================================================
-# 🔔 MODAL DE NOTIFICAÇÕES
-# ==========================================================
-@st.dialog("🔔 Central de Notificações")
-def modal_notificacoes(nome_usuario):
-    st.markdown("Acompanhe os seus avisos, resultados de PDI e contestações:")
-    try:
-        # Busca apenas as não lidas para limpar a visão
-        res = supabase.table("notificacoes").select("*").eq("usuario", nome_usuario).eq("lida", False).execute()
-        notifs = res.data if res.data else []
-        
-        if not notifs:
-            st.info("🎉 Você não tem notificações no momento.")
-        else:
-            notifs = sorted(notifs, key=lambda x: x.get('id', 0), reverse=True)
-            
-            for n in notifs:
-                cor_borda = "#ff4b4b"
-                icone = "🔴"
-                msg = n.get('mensagem', 'Nova notificação')
-                
-                st.markdown(f"""
-                    <div style='padding:12px; border-left:4px solid {cor_borda}; margin-bottom:8px; background-color:rgba(255,255,255,0.05); border-radius:5px;'>
-                        <span style='font-size:14px; color:white;'>{icone} {msg}</span>
-                    </div>
-                """, unsafe_allow_html=True)
-            
-        st.divider()
-        
-        c_limpar, c_lidas, c_fechar = st.columns(3)
-        
-        if c_lidas.button("✅ Lidas", use_container_width=True):
-            supabase.table("notificacoes").update({"lida": True}).eq("usuario", nome_usuario).execute()
-            st.rerun()
-            
-        if c_limpar.button("🗑️ Limpar", use_container_width=True):
-            limpar_todas_notificacoes(nome_usuario)
-            st.rerun()
-            
-        if c_fechar.button("❌ Fechar", use_container_width=True):
-            st.rerun()
-                
-    except Exception as e:
-        st.error(f"Erro ao carregar notificações: {e}")
-
-# ==========================================================
 # MODAL DE ANULAR AUDITORIA
 # ==========================================================
 @st.dialog("🗑️ Confirmar Anulação")
@@ -217,7 +172,29 @@ def render_historico_geral(nivel, nome_completo):
 
 def main():
     st.set_page_config(layout="wide", page_title="Acelera Quality", page_icon="🚀")
-    st.markdown("<style>section[data-testid='stSidebar'] { display: block !important; visibility: visible !important; }</style>", unsafe_allow_html=True)
+    
+    # CSS: Força a sidebar a ficar visível e adiciona a animação do sininho (PULSE)
+    st.markdown("""
+    <style>
+    section[data-testid='stSidebar'] { display: block !important; visibility: visible !important; }
+    @keyframes pulse-red {
+        0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(255, 75, 75, 0.7); }
+        70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(255, 75, 75, 0); }
+        100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(255, 75, 75, 0); }
+    }
+    .notif-badge {
+        display: inline-block;
+        background-color: #ff4b4b;
+        color: white;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 13px;
+        font-weight: bold;
+        animation: pulse-red 2s infinite;
+        margin-left: 5px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
     if "authenticated" not in st.session_state: st.session_state.authenticated = False
     if "departamento_selecionado" not in st.session_state: st.session_state.departamento_selecionado = "Todos"
@@ -266,16 +243,43 @@ def main():
             st.session_state.departamento_selecionado = meu_dept
 
         # ==========================================================
-        # 🔔 GATILHO DO MODAL DE NOTIFICAÇÕES (AGORA VISÍVEL PARA TODOS)
+        # 🔔 SININHO MODERNO (PULSE + POPOVER)
         # ==========================================================
+        st.write("") # Espaço extra
         res_n = buscar_contagem_notificacoes(nome_completo, nivel)
-        qtd_notificacoes = int(res_n if res_n else 0)
-        
-        tipo_btn = "primary" if qtd_notificacoes > 0 else "secondary"
-        texto_btn = f"🔔 {qtd_notificacoes} Nova(s) Notificação(ões)" if qtd_notificacoes > 0 else "🔔 Notificações"
-        
-        if st.button(texto_btn, use_container_width=True, type=tipo_btn):
-            modal_notificacoes(nome_completo)
+        qtd = int(res_n if res_n else 0)
+
+        if qtd > 0:
+            label_html = f"🔔 Notificações <span class='notif-badge'>{qtd}</span>"
+            st.markdown(label_html, unsafe_allow_html=True)
+        else:
+            st.markdown("🔕 Sem novas notificações")
+
+        # O Popover flutuante
+        with st.popover("📬 Abrir Caixa de Entrada", use_container_width=True):
+            st.markdown("### Suas Mensagens")
+            try:
+                # Busca as mensagens do banco
+                res = supabase.table("notificacoes").select("*").eq("usuario", nome_completo).eq("lida", False).order("id", desc=True).execute()
+                notifs = res.data if res.data else []
+                
+                if notifs:
+                    for notif in notifs:
+                        # Colore de verde se for uma medalha ou conquista
+                        if "Medalha" in notif['mensagem'] or "PARABÉNS" in notif['mensagem'] or "Sniper" in notif['mensagem'] or "Muralha" in notif['mensagem']:
+                            st.success(notif['mensagem'])
+                        else:
+                            st.info(notif['mensagem'])
+                    
+                    st.divider()
+                    if st.button("✅ Marcar todas como Lidas", use_container_width=True, type="primary"):
+                        limpar_todas_notificacoes(nome_completo)
+                        st.rerun()
+                else:
+                    st.caption("Você está em dia! Nenhuma novidade por aqui. 😎")
+                    
+            except Exception as e:
+                st.caption(f"Erro ao carregar mensagens: {e}")
                 
         st.divider()
 
@@ -283,7 +287,8 @@ def main():
         # 🕹️ LÓGICA DE MENUS E HIERARQUIA
         # ==========================================================
         def menu(label, target):
-            if st.button(label, use_container_width=True, type="primary" if st.session_state.current_page == target else "secondary"):
+            def_btn_type = "primary" if st.session_state.current_page == target else "secondary"
+            if st.button(label, use_container_width=True, type=def_btn_type):
                 st.session_state.current_page = target
                 st.rerun()
 
@@ -344,18 +349,20 @@ def main():
 
     page = st.session_state.current_page
     try:
-        if page == "DASHBOARD": render_dashboard()
-        elif page == "PERFIL": render_meu_perfil()
-        elif page == "CONTESTACAO": render_contestacao()
-        elif page == "MEUS_RESULTADOS": render_meus_resultados()
-        elif page == "HISTORICO": render_historico_geral(nivel, nome_completo)
-        elif page == "RELATORIOS": render_relatorios()
-        elif page == "CADASTRO": render_cadastro()
-        elif page == "MONITORIA": render_nova_monitoria()
-        elif page == "GESTAO_USUARIOS": render_usuario_gestao()
-        elif page == "CONFIG_CRITERIOS": render_gestao_criterios()
-        elif page == "AUDITORIA": render_auditoria()
-        elif page == "PDI": render_pdi() 
+        def render_page(p):
+            if p == "DASHBOARD": render_dashboard()
+            elif p == "PERFIL": render_meu_perfil()
+            elif p == "CONTESTACAO": render_contestacao()
+            elif p == "MEUS_RESULTADOS": render_meus_resultados()
+            elif p == "HISTORICO": render_historico_geral(nivel, nome_completo)
+            elif p == "RELATORIOS": render_relatorios()
+            elif p == "CADASTRO": render_cadastro()
+            elif p == "MONITORIA": render_nova_monitoria()
+            elif p == "GESTAO_USUARIOS": render_usuario_gestao()
+            elif p == "CONFIG_CRITERIOS": render_gestao_criterios()
+            elif p == "AUDITORIA": render_auditoria()
+            elif p == "PDI": render_pdi() 
+        render_page(page)
     except Exception as e:
         st.error(f"Erro ao carregar página: {e}")
 
