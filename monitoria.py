@@ -8,7 +8,7 @@ def render_nova_monitoria():
     dept_selecionado = st.session_state.get('departamento_selecionado', 'Todos')
     nivel_logado = st.session_state.get('nivel', 'USUARIO').upper()
     
-    st.title(f"📝 Nova Monitoria - {dept_selecionado}")
+    st.title("📝 Nova Monitoria")
     st.markdown("Preencha o checklist. Itens marcados com 🚩 são **Fatais** e zeram a nota em caso de erro.")
     
     # ==========================================================
@@ -30,16 +30,7 @@ def render_nova_monitoria():
     if nivel_logado != "ADMIN" and not df_users.empty:
         df_users = df_users[~df_users['nome'].str.contains('admin@grupoacelerador.com.br', na=False, case=False)].copy()
 
-    # Filtro de Departamento nos Critérios
-    if not df_criterios.empty and dept_selecionado != "Todos":
-        dept_user = dept_selecionado.strip().upper()
-        df_criterios = df_criterios[df_criterios['departamento'].astype(str).str.strip().str.upper() == dept_user].copy()
-
-    if df_criterios.empty:
-        st.warning(f"⚠️ Nenhum critério ativo encontrado para **{dept_selecionado}**.")
-        return
-
-    # Filtro de Colaboradores
+    # Filtro de Colaboradores baseado no Menu Lateral
     if not df_users.empty and dept_selecionado != "Todos":
         dept_user = dept_selecionado.strip().upper()
         df_users = df_users[
@@ -47,25 +38,49 @@ def render_nova_monitoria():
             (df_users['nivel'].astype(str).str.strip().str.upper() == dept_user)
         ]
     
-    # Lista limpa sem nomes nulos
     lista_colaboradores = sorted(df_users['nome'].dropna().unique().tolist()) if not df_users.empty else []
     opcoes_sdr = ["Selecione..."] + lista_colaboradores
 
     # ==========================================================
-    # 2. FORMULÁRIO DE MONITORIA
+    # 2. SELEÇÃO DINÂMICA (FORA DO FORMULÁRIO)
     # ==========================================================
-    # CORREÇÃO: clear_on_submit=False garante que os dados não sumam se houver erro
-    with st.form("form_monitoria_v5", clear_on_submit=False):
+    with st.container(border=True):
+        st.subheader("👤 Identificação da Chamada")
+        c1, c2, c3 = st.columns([2, 1.5, 1.5])
         
-        with st.container(border=True):
-            st.subheader("👤 Identificação da Chamada")
-            c1, c2, c3 = st.columns([2, 1.5, 1.5])
-            sdr_escolhido = c1.selectbox("Colaborador Auditado", options=opcoes_sdr)
-            link_selene = c2.text_input("URL da Gravação (Selene/Zoom)", placeholder="http://...")
-            link_nectar = c3.text_input("URL do CRM (Nectar)", placeholder="http://...")
+        # Este campo agora fica FORA do form para a tela reagir na hora!
+        sdr_escolhido = c1.selectbox("Colaborador Auditado", options=opcoes_sdr)
+        link_selene = c2.text_input("URL da Gravação (Selene/Zoom)", placeholder="http://...")
+        link_nectar = c3.text_input("URL do CRM (Nectar)", placeholder="http://...")
 
-        st.write("##")
+    if sdr_escolhido == "Selecione...":
+        st.info("👆 Selecione um colaborador acima para carregar o checklist de avaliação correspondente ao setor dele.")
+        return
 
+    # 🔎 DESCOBRINDO O DEPARTAMENTO DO COLABORADOR SELECIONADO
+    dept_do_colaborador = "Todos"
+    if not df_users.empty:
+        linha_colab = df_users[df_users['nome'] == sdr_escolhido]
+        if not linha_colab.empty:
+            dept_do_colaborador = str(linha_colab.iloc[0].get('departamento', 'Todos')).strip()
+
+    st.markdown(f"**Setor do Colaborador:** `{dept_do_colaborador}`")
+
+    # 🎯 FILTRANDO OS CRITÉRIOS PARA MOSTRAR SÓ OS DO SETOR DELE (ou Todos)
+    if not df_criterios.empty:
+        df_criterios = df_criterios[
+            (df_criterios['departamento'].astype(str).str.strip().str.upper() == dept_do_colaborador.upper()) | 
+            (df_criterios['departamento'].astype(str).str.strip().str.title() == 'Todos')
+        ].copy()
+
+    if df_criterios.empty:
+        st.warning(f"⚠️ Nenhum critério de avaliação cadastrado para o setor: {dept_do_colaborador}.")
+        return
+
+    # ==========================================================
+    # 3. FORMULÁRIO DE MONITORIA
+    # ==========================================================
+    with st.form("form_monitoria_v5", clear_on_submit=False):
         respostas = {}
         grupos = df_criterios['grupo'].unique() if 'grupo' in df_criterios.columns else ["Geral"]
 
@@ -103,10 +118,6 @@ def render_nova_monitoria():
         # Botão de envio fixado no final do form
         if st.form_submit_button("🚀 Finalizar e Enviar Monitoria", use_container_width=True, type="primary"):
             
-            if sdr_escolhido == "Selecione...":
-                st.error("⚠️ Por favor, selecione o colaborador auditado.")
-                st.stop()
-
             with st.spinner("Calculando nota e processando evidências..."):
                 total_maximo_ponderado = 0.0
                 total_conquistado_ponderado = 0.0
@@ -155,7 +166,7 @@ def render_nova_monitoria():
 
                 payload = {
                     "sdr": sdr_escolhido,
-                    "departamento": dept_selecionado,
+                    "departamento": dept_do_colaborador, # <-- Salva com o departamento correto dele
                     "nota": int(round(nota_final)),
                     "link_selene": link_selene,
                     "link_nectar": link_nectar,
@@ -169,9 +180,6 @@ def render_nova_monitoria():
                 if sucesso:
                     st.success(f"✅ Monitoria finalizada com nota {payload['nota']}%!")
                     
-                    # ==========================================================
-                    # 🔔 GATILHOS DE NOTIFICAÇÃO (SISTEMA DE MEDALHAS)
-                    # ==========================================================
                     # 🎯 Gatilho Sniper (Nota 100%)
                     if payload['nota'] == 100:
                         supabase.table("notificacoes").insert({
@@ -193,6 +201,6 @@ def render_nova_monitoria():
                         
                     st.balloons()
                     time.sleep(2)
-                    st.rerun() # <--- Aqui o sistema recarrega a página, limpando o formulário apenas em caso de SUCESSO!
+                    st.rerun() 
                 else:
                     st.error(f"Erro ao salvar: {msg}")
