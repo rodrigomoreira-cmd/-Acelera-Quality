@@ -25,10 +25,14 @@ def render_nova_monitoria():
         return
 
     # ==========================================================
-    # 🛡️ TRAVA DE SEGURANÇA: OCULTAR ADMIN MESTRE
+    # 🛡️ TRAVA DE SEGURANÇA: OCULTAR ADMIN MESTRE (REVISADO)
     # ==========================================================
-    if nivel_logado != "ADMIN" and not df_users.empty:
-        df_users = df_users[~df_users['nome'].str.contains('admin@grupoacelerador.com.br', na=False, case=False)].copy()
+    if not df_users.empty:
+        # Oculta o admin master de todas as listagens de monitoria, independente de quem logou
+        df_users = df_users[
+            (~df_users['email'].astype(str).str.contains('admin@grupoacelerador.com.br', na=False, case=False)) &
+            (~df_users['nome'].astype(str).str.contains('admin@grupoacelerador.com.br', na=False, case=False))
+        ].copy()
 
     # Filtro de Colaboradores baseado no Menu Lateral
     if not df_users.empty and dept_selecionado != "Todos":
@@ -48,16 +52,15 @@ def render_nova_monitoria():
         st.subheader("👤 Identificação da Chamada")
         c1, c2, c3 = st.columns([2, 1.5, 1.5])
         
-        # Este campo agora fica FORA do form para a tela reagir na hora!
         sdr_escolhido = c1.selectbox("Colaborador Auditado", options=opcoes_sdr)
         link_selene = c2.text_input("URL da Gravação (Selene/Zoom)", placeholder="http://...")
         link_nectar = c3.text_input("URL do CRM (Nectar)", placeholder="http://...")
 
     if sdr_escolhido == "Selecione...":
-        st.info("👆 Selecione um colaborador acima para carregar o checklist de avaliação correspondente ao setor dele.")
+        st.info("👆 Selecione um colaborador acima para carregar o checklist correspondente.")
         return
 
-    # 🔎 DESCOBRINDO O DEPARTAMENTO DO COLABORADOR SELECIONADO
+    # 🔎 DESCOBRINDO O DEPARTAMENTO DO COLABORADOR
     dept_do_colaborador = "Todos"
     if not df_users.empty:
         linha_colab = df_users[df_users['nome'] == sdr_escolhido]
@@ -66,16 +69,12 @@ def render_nova_monitoria():
 
     st.markdown(f"**Setor do Colaborador:** `{dept_do_colaborador}`")
 
-    # 🎯 FILTRANDO OS CRITÉRIOS PARA MOSTRAR SÓ OS DO SETOR DELE (ou Todos)
+    # 🎯 FILTRANDO OS CRITÉRIOS
     if not df_criterios.empty:
         df_criterios = df_criterios[
             (df_criterios['departamento'].astype(str).str.strip().str.upper() == dept_do_colaborador.upper()) | 
             (df_criterios['departamento'].astype(str).str.strip().str.title() == 'Todos')
         ].copy()
-
-    if df_criterios.empty:
-        st.warning(f"⚠️ Nenhum critério de avaliação cadastrado para o setor: {dept_do_colaborador}.")
-        return
 
     # ==========================================================
     # 3. FORMULÁRIO DE MONITORIA
@@ -89,33 +88,26 @@ def render_nova_monitoria():
                 itens_grupo = df_criterios[df_criterios['grupo'] == grupo]
                 
                 for _, row in itens_grupo.iterrows():
-                    nome_c = row['nome']
                     id_c = row['id']
+                    nome_c = row['nome']
                     peso_c = int(row.get('peso', 1))
                     eh_fatal = bool(row.get('eh_fatal', False))
                     
-                    label_exibicao = f"🚩 **{nome_c}**" if eh_fatal else f"**{nome_c}**"
-                    st.markdown(f"{label_exibicao} <small>(Peso: {peso_c})</small>", unsafe_allow_html=True)
+                    st.markdown(f"**{nome_c}** {'🚩' if eh_fatal else ''} <small>(Peso: {peso_c})</small>", unsafe_allow_html=True)
                     
                     col_res, col_com, col_img = st.columns([1.5, 2, 1.2])
                     v_res = col_res.radio(f"Status {id_c}", ["C", "NC", "NC Grave", "NSA"], index=0, horizontal=True, label_visibility="collapsed", key=f"rad_{id_c}")
-                    v_com = col_com.text_input("Comentário", placeholder="Justificativa (Opcional)...", label_visibility="collapsed", key=f"com_{id_c}")
+                    v_com = col_com.text_input("Comentário", placeholder="Justificativa...", label_visibility="collapsed", key=f"com_{id_c}")
                     v_img = col_img.file_uploader("Evidência", type=['png', 'jpg', 'jpeg'], label_visibility="collapsed", key=f"file_{id_c}")
                     
                     respostas[nome_c] = {
-                        "valor": v_res, 
-                        "peso": peso_c, 
-                        "eh_fatal": eh_fatal,
-                        "comentario": v_com,
-                        "arquivo": v_img, 
-                        "nome_original": v_img.name if v_img else None
+                        "valor": v_res, "peso": peso_c, "eh_fatal": eh_fatal,
+                        "comentario": v_com, "arquivo": v_img
                     }
                     st.divider()
 
-        st.subheader("✍️ Feedback Final")
         observacoes = st.text_area("Pontos Positivos e Planos de Ação:", height=150)
 
-        # Botão de envio fixado no final do form
         if st.form_submit_button("🚀 Finalizar e Enviar Monitoria", use_container_width=True, type="primary"):
             
             with st.spinner("Calculando nota e processando evidências..."):
@@ -137,8 +129,16 @@ def render_nova_monitoria():
                             ext = f.name.split('.')[-1].lower() 
                             nome_bucket = f"prova_{uuid.uuid4().hex[:10]}.{ext}"
                             supabase.storage.from_("evidencias").upload(path=nome_bucket, file=f.getvalue(), file_options={"content-type": f.type})
+                            
+                            # --- CORREÇÃO DO ERRO 'STR' OBJECT ---
                             res_url = supabase.storage.from_("evidencias").get_public_url(nome_bucket)
-                            url_publica = res_url.public_url
+                            # Verifica se res_url é uma string ou objeto
+                            if isinstance(res_url, str):
+                                url_publica = res_url
+                            else:
+                                url_publica = getattr(res_url, 'public_url', str(res_url))
+                            # -------------------------------------
+                            
                         except Exception as e:
                             st.error(f"🛑 Erro no upload: {e}")
                             erro_upload = True
@@ -153,11 +153,8 @@ def render_nova_monitoria():
                     if res == "NC Grave": fatal_detectado = True
 
                     detalhes_finais[nome] = {
-                        "nota": res,
-                        "comentario": item["comentario"],
-                        "peso_aplicado": peso,
-                        "foi_fatal": fatal,
-                        "url_arquivo": url_publica
+                        "nota": res, "comentario": item["comentario"],
+                        "peso_applied": peso, "foi_fatal": fatal, "url_arquivo": url_publica
                     }
 
                 if erro_upload: st.stop()
@@ -166,7 +163,7 @@ def render_nova_monitoria():
 
                 payload = {
                     "sdr": sdr_escolhido,
-                    "departamento": dept_do_colaborador, # <-- Salva com o departamento correto dele
+                    "departamento": dept_do_colaborador,
                     "nota": int(round(nota_final)),
                     "link_selene": link_selene,
                     "link_nectar": link_nectar,
@@ -178,29 +175,17 @@ def render_nova_monitoria():
                 sucesso, msg = salvar_monitoria_auditada(payload)
                 
                 if sucesso:
-                    st.success(f"✅ Monitoria finalizada com nota {payload['nota']}%!")
+                    st.success(f"✅ Monitoria salva! Nota: {payload['nota']}%")
                     
-                    # 🎯 Gatilho Sniper (Nota 100%)
+                    # Notificações de Medalhas
                     if payload['nota'] == 100:
-                        supabase.table("notificacoes").insert({
-                            "usuario": sdr_escolhido,
-                            "mensagem": "🎯 PARABÉNS! Você conquistou uma nota 100% e desbloqueou a medalha Sniper da Qualidade!",
-                            "lida": False
-                        }).execute()
-
-                    # 🛡️ Gatilho Muralha (Progresso: Call sem erros fatais)
+                        supabase.table("notificacoes").insert({"usuario": sdr_escolhido, "mensagem": "🎯 Medalha Sniper Desbloqueada! Nota 100%.", "lida": False}).execute()
                     if not fatal_detectado and payload['nota'] > 0:
-                        supabase.table("notificacoes").insert({
-                            "usuario": sdr_escolhido,
-                            "mensagem": f"🛡️ Ótimo trabalho! Você finalizou uma monitoria sem erros fatais ({payload['nota']}%). Continue assim para manter sua medalha Muralha!",
-                            "lida": False
-                        }).execute()
+                        supabase.table("notificacoes").insert({"usuario": sdr_escolhido, "mensagem": f"🛡️ Medalha Muralha: Monitoria sem fatais ({payload['nota']}%).", "lida": False}).execute()
 
-                    if fatal_detectado: 
-                        st.error("🚨 NOTA ZERO: Um item Crítico/Fatal foi descumprido.")
-                        
+                    if fatal_detectado: st.error("🚨 NOTA ZERO: Item Fatal descumprido.")
                     st.balloons()
-                    time.sleep(2)
-                    st.rerun() 
+                    time.sleep(1.5)
+                    st.rerun()
                 else:
                     st.error(f"Erro ao salvar: {msg}")
