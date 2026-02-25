@@ -11,7 +11,9 @@ def render_nova_monitoria():
     st.title("📝 Nova Monitoria")
     st.markdown("Preencha o checklist. Itens marcados com 🚩 são **Fatais** e zeram a nota em caso de erro.")
     
-    # 1. BUSCA DE DADOS
+    # ==========================================================
+    # 1. BUSCA DE CRITÉRIOS E USUÁRIOS
+    # ==========================================================
     try:
         res_crit = supabase.table("criterios_qa").select("*").eq("esta_ativo", True).execute()
         df_criterios = pd.DataFrame(res_crit.data) if res_crit.data else pd.DataFrame()
@@ -40,10 +42,13 @@ def render_nova_monitoria():
     lista_colaboradores = sorted(df_users['nome'].dropna().unique().tolist()) if not df_users.empty else []
     opcoes_sdr = ["Selecione..."] + lista_colaboradores
 
+    # ==========================================================
     # 2. SELEÇÃO DINÂMICA (FORA DO FORMULÁRIO)
+    # ==========================================================
     with st.container(border=True):
         st.subheader("👤 Identificação da Chamada")
         c1, c2, c3 = st.columns([2, 1.5, 1.5])
+        
         sdr_escolhido = c1.selectbox("Colaborador Auditado", options=opcoes_sdr)
         link_selene = c2.text_input("URL da Gravação (Selene/Zoom)", placeholder="http://...")
         link_nectar = c3.text_input("URL do CRM (Nectar)", placeholder="http://...")
@@ -52,7 +57,7 @@ def render_nova_monitoria():
         st.info("👆 Selecione um colaborador acima para carregar o checklist correspondente.")
         return
 
-    # DESCOBRINDO O DEPARTAMENTO DO COLABORADOR
+    # 🔎 DESCOBRINDO O DEPARTAMENTO DO COLABORADOR
     dept_do_colaborador = "Todos"
     if not df_users.empty:
         linha_colab = df_users[df_users['nome'] == sdr_escolhido]
@@ -61,14 +66,16 @@ def render_nova_monitoria():
 
     st.markdown(f"**Setor do Colaborador:** `{dept_do_colaborador}`")
 
-    # FILTRANDO OS CRITÉRIOS
+    # 🎯 FILTRANDO OS CRITÉRIOS
     if not df_criterios.empty:
         df_criterios = df_criterios[
             (df_criterios['departamento'].astype(str).str.strip().str.upper() == dept_do_colaborador.upper()) | 
             (df_criterios['departamento'].astype(str).str.strip().str.title() == 'Todos')
         ].copy()
 
+    # ==========================================================
     # 3. FORMULÁRIO DE MONITORIA
+    # ==========================================================
     with st.form("form_monitoria_v5", clear_on_submit=False):
         respostas = {}
         grupos = df_criterios['grupo'].unique() if 'grupo' in df_criterios.columns else ["Geral"]
@@ -76,6 +83,7 @@ def render_nova_monitoria():
         for grupo in grupos:
             with st.expander(f"📂 {str(grupo).upper()}", expanded=True):
                 itens_grupo = df_criterios[df_criterios['grupo'] == grupo]
+                
                 for _, row in itens_grupo.iterrows():
                     id_c = row['id']
                     nome_c = row['nome']
@@ -99,20 +107,20 @@ def render_nova_monitoria():
         observacoes = st.text_area("Pontos Positivos e Planos de Ação:", height=150)
 
         if st.form_submit_button("🚀 Finalizar e Enviar Monitoria", use_container_width=True, type="primary"):
+            
             with st.spinner("Calculando nota e processando evidências..."):
                 total_maximo_ponderado = 0.0
                 total_conquistado_ponderado = 0.0
                 fatal_detectado = False
                 detalhes_finais = {}
                 erro_upload = False
-                pelo_menos_uma_foto = False
 
                 for nome, item in respostas.items():
                     res = item["valor"]
                     peso = item["peso"]
                     fatal = item["eh_fatal"]
+                    
                     url_publica = None
-
                     if item["arquivo"]:
                         try:
                             f = item["arquivo"]
@@ -121,13 +129,11 @@ def render_nova_monitoria():
                             supabase.storage.from_("evidencias").upload(path=nome_bucket, file=f.getvalue(), file_options={"content-type": f.type})
                             
                             res_url = supabase.storage.from_("evidencias").get_public_url(nome_bucket)
-                            # Correção do erro 'str' object has no attribute 'public_url'
                             if isinstance(res_url, str):
                                 url_publica = res_url
                             else:
                                 url_publica = getattr(res_url, 'public_url', str(res_url))
-                            
-                            pelo_menos_uma_foto = True
+                                
                         except Exception as e:
                             st.error(f"🛑 Erro no upload: {e}")
                             erro_upload = True
@@ -141,6 +147,7 @@ def render_nova_monitoria():
                     
                     if res == "NC Grave": fatal_detectado = True
 
+                    # Dados da foto salvos internamente no JSON (Sem quebrar o banco)
                     detalhes_finais[nome] = {
                         "nota": res, "comentario": item["comentario"],
                         "peso_aplicado": peso, "foi_fatal": fatal, 
@@ -153,6 +160,7 @@ def render_nova_monitoria():
 
                 nota_final = 0 if fatal_detectado else (total_conquistado_ponderado / total_maximo_ponderado * 100) if total_maximo_ponderado > 0 else 100
 
+                # Payload limpo de colunas inexistentes
                 payload = {
                     "sdr": sdr_escolhido,
                     "departamento": dept_do_colaborador,
@@ -161,23 +169,44 @@ def render_nova_monitoria():
                     "link_nectar": link_nectar,
                     "observacoes": observacoes,
                     "monitor_responsavel": st.session_state.get('user_nome', 'Sistema'),
-                    "detalhes": detalhes_finais,
-                    "evidencia_anexada": pelo_menos_uma_foto # Requer que a coluna exista no DB
+                    "detalhes": detalhes_finais
                 }
 
                 sucesso, msg = salvar_monitoria_auditada(payload)
                 
                 if sucesso:
                     st.success(f"✅ Monitoria salva com nota {payload['nota']}%!")
-                    # Gatilhos de Notificações simplificados
+                    
+                    # ==========================================================
+                    # 🔔 GATILHOS DE NOTIFICAÇÃO (UNIFICADOS E COMPLETOS)
+                    # ==========================================================
                     try:
-                        if payload['nota'] == 100:
-                            supabase.table("notificacoes").insert({"usuario": sdr_escolhido, "mensagem": "🎯 Medalha Sniper!", "lida": False}).execute()
-                        if not fatal_detectado and payload['nota'] > 0:
-                            supabase.table("notificacoes").insert({"usuario": sdr_escolhido, "mensagem": "🛡️ Medalha Muralha!", "lida": False}).execute()
-                    except: pass
+                        # 1. Sempre avisa o SDR que ele tem uma nova nota
+                        supabase.table("notificacoes").insert({
+                            "usuario": sdr_escolhido, 
+                            "mensagem": f"📊 Você recebeu uma nova avaliação de qualidade! Nota: {payload['nota']}%.", 
+                            "lida": False
+                        }).execute()
 
-                    if fatal_detectado: st.error("🚨 NOTA ZERO: Item Fatal descumprido.")
+                        # 2. Regras de Medalhas (Gamificação)
+                        if payload['nota'] == 100:
+                            supabase.table("notificacoes").insert({
+                                "usuario": sdr_escolhido, 
+                                "mensagem": "🎯 PARABÉNS! Você conquistou a Medalha Sniper (Nota 100%).", 
+                                "lida": False
+                            }).execute()
+                        elif not fatal_detectado and payload['nota'] > 0:
+                            supabase.table("notificacoes").insert({
+                                "usuario": sdr_escolhido, 
+                                "mensagem": f"🛡️ Ótimo trabalho! Você finalizou uma call sem erros Fatais (Medalha Muralha).", 
+                                "lida": False
+                            }).execute()
+                    except Exception as e:
+                        print(f"Erro silencioso ao gerar notificação: {e}")
+
+                    if fatal_detectado: 
+                        st.error("🚨 NOTA ZERO: Um item Crítico/Fatal foi descumprido.")
+                        
                     st.balloons()
                     time.sleep(2)
                     st.rerun()
