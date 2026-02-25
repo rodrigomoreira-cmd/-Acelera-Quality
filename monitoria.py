@@ -12,7 +12,7 @@ def render_nova_monitoria():
     st.markdown("Preencha o checklist. Itens marcados com 🚩 são **Fatais** e zeram a nota em caso de erro.")
     
     # ==========================================================
-    # 1. BUSCA DE CRITÉRIOS
+    # 1. BUSCA DE CRITÉRIOS E USUÁRIOS
     # ==========================================================
     try:
         res_crit = supabase.table("criterios_qa").select("*").eq("esta_ativo", True).execute()
@@ -28,15 +28,12 @@ def render_nova_monitoria():
     # 🛡️ TRAVA DE SEGURANÇA: OCULTAR ADMIN MESTRE
     # ==========================================================
     if nivel_logado != "ADMIN" and not df_users.empty:
-        if 'email' in df_users.columns:
-            df_users = df_users[df_users['email'] != 'admin@grupoacelerador.com.br'].copy()
-        elif 'nome' in df_users.columns:
-            df_users = df_users[df_users['nome'] != 'admin@grupoacelerador.com.br'].copy()
+        df_users = df_users[~df_users['nome'].str.contains('admin@grupoacelerador.com.br', na=False, case=False)].copy()
 
-    # Filtro de Departamento
+    # Filtro de Departamento nos Critérios
     if not df_criterios.empty and dept_selecionado != "Todos":
         dept_user = dept_selecionado.strip().upper()
-        df_criterios = df_criterios[df_criterios['departamento'].str.upper() == dept_user].copy()
+        df_criterios = df_criterios[df_criterios['departamento'].astype(str).str.strip().str.upper() == dept_user].copy()
 
     if df_criterios.empty:
         st.warning(f"⚠️ Nenhum critério ativo encontrado para **{dept_selecionado}**.")
@@ -45,16 +42,20 @@ def render_nova_monitoria():
     # Filtro de Colaboradores
     if not df_users.empty and dept_selecionado != "Todos":
         dept_user = dept_selecionado.strip().upper()
-        df_users = df_users[(df_users['departamento'].str.upper() == dept_user) | 
-                            (df_users['nivel'].str.upper() == dept_user)]
+        df_users = df_users[
+            (df_users['departamento'].astype(str).str.strip().str.upper() == dept_user) | 
+            (df_users['nivel'].astype(str).str.strip().str.upper() == dept_user)
+        ]
     
-    lista_colaboradores = sorted(df_users['nome'].unique().tolist()) if not df_users.empty else []
+    # Lista limpa sem nomes nulos
+    lista_colaboradores = sorted(df_users['nome'].dropna().unique().tolist()) if not df_users.empty else []
     opcoes_sdr = ["Selecione..."] + lista_colaboradores
 
     # ==========================================================
     # 2. FORMULÁRIO DE MONITORIA
     # ==========================================================
-    with st.form("form_monitoria_v5", clear_on_submit=True):
+    # CORREÇÃO: clear_on_submit=False garante que os dados não sumam se houver erro
+    with st.form("form_monitoria_v5", clear_on_submit=False):
         
         with st.container(border=True):
             st.subheader("👤 Identificação da Chamada")
@@ -83,7 +84,7 @@ def render_nova_monitoria():
                     
                     col_res, col_com, col_img = st.columns([1.5, 2, 1.2])
                     v_res = col_res.radio(f"Status {id_c}", ["C", "NC", "NC Grave", "NSA"], index=0, horizontal=True, label_visibility="collapsed", key=f"rad_{id_c}")
-                    v_com = col_com.text_input("Comentário", placeholder="Justificativa...", label_visibility="collapsed", key=f"com_{id_c}")
+                    v_com = col_com.text_input("Comentário", placeholder="Justificativa (Opcional)...", label_visibility="collapsed", key=f"com_{id_c}")
                     v_img = col_img.file_uploader("Evidência", type=['png', 'jpg', 'jpeg'], label_visibility="collapsed", key=f"file_{id_c}")
                     
                     respostas[nome_c] = {
@@ -99,15 +100,11 @@ def render_nova_monitoria():
         st.subheader("✍️ Feedback Final")
         observacoes = st.text_area("Pontos Positivos e Planos de Ação:", height=150)
 
+        # Botão de envio fixado no final do form
         if st.form_submit_button("🚀 Finalizar e Enviar Monitoria", use_container_width=True, type="primary"):
             
             if sdr_escolhido == "Selecione...":
                 st.error("⚠️ Por favor, selecione o colaborador auditado.")
-                st.stop()
-
-            erros_sem_comentario = [n for n, r in respostas.items() if r['valor'] in ['NC', 'NC Grave'] and not r['comentario']]
-            if erros_sem_comentario:
-                st.error(f"❌ Justificativa obrigatória para os erros em: {', '.join(erros_sem_comentario)}")
                 st.stop()
 
             with st.spinner("Calculando nota e processando evidências..."):
@@ -196,6 +193,6 @@ def render_nova_monitoria():
                         
                     st.balloons()
                     time.sleep(2)
-                    st.rerun()
+                    st.rerun() # <--- Aqui o sistema recarrega a página, limpando o formulário apenas em caso de SUCESSO!
                 else:
                     st.error(f"Erro ao salvar: {msg}")

@@ -194,6 +194,7 @@ def render_pdi():
                     
                     obs_comp = st.text_area("📝 Plano de Ação e Feedback:", value=aval_atual.get('observacoes', '') if aval_atual is not None else "", height=150)
                     
+                    # Garantindo que o botão fica no fim
                     btn_submit = st.form_submit_button("💾 Salvar Avaliação PDI", type="primary", use_container_width=True)
                     
                     if btn_submit:

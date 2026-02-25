@@ -14,7 +14,7 @@ from meu_perfil import render_meu_perfil
 from auditoria import render_auditoria 
 from relatorios import render_relatorios 
 from gestao_criterios import render_gestao_criterios 
-from matriz_decisao import render_pdi  
+from matriz_decisao import render_pdi
 from style import apply_custom_styles
 from database import get_all_records_db, supabase, buscar_contagem_notificacoes, limpar_todas_notificacoes, anular_monitoria_auditada, registrar_auditoria, remover_evidencia_monitoria
 
@@ -102,8 +102,10 @@ def render_historico_geral(nivel, nome_completo):
         return
 
     df_monitorias['id'] = df_monitorias['id'].astype(str).str.strip()
-    df_monitorias['criado_em'] = pd.to_datetime(df_monitorias['criado_em'])
-    df_monitorias = df_monitorias.sort_values(by='criado_em', ascending=False)
+    
+    # CORREÇÃO: Tratamento de data seguro com errors='coerce'
+    df_monitorias['criado_em'] = pd.to_datetime(df_monitorias['criado_em'], errors='coerce')
+    df_monitorias = df_monitorias.dropna(subset=['criado_em']).sort_values(by='criado_em', ascending=False)
     
     if df_contestacoes is not None and not df_contestacoes.empty:
         df_contestacoes['id'] = df_contestacoes['id'].astype(str).str.strip()
@@ -117,7 +119,8 @@ def render_historico_geral(nivel, nome_completo):
     if dept_selecionado != "Todos" and 'departamento' in df_exibicao.columns:
         df_exibicao = df_exibicao[df_exibicao['departamento'].astype(str).str.strip().str.upper() == dept_selecionado.strip().upper()].copy()
 
-    df_exibicao['Data'] = df_exibicao['criado_em'].dt.strftime('%d/%m/%Y %H:%M')
+    # Formatação de data após a blindagem
+    df_exibicao['Data'] = df_exibicao['criado_em'].dt.strftime('%d/%m/%Y %H:%M').fillna("Data N/D")
     
     # ==========================================================
     # 🛡️ REGRA DE SEGURANÇA: OCULTAR ADMIN MESTRE
@@ -249,12 +252,10 @@ def main():
         st.markdown("**🏢 Visão por Departamento**")
         
         if nivel == "GESTAO":
-            # Trava Izabela/Gestão para ver apenas o próprio time e bloqueia o select
             st.session_state.departamento_selecionado = meu_dept
             st.selectbox("Filtrar sistema para:", [meu_dept], index=0, disabled=True)
             st.info(f"Visualizando Equipe: **{meu_dept}**")
         elif nivel in ["ADMIN", "AUDITOR", "GERENCIA"]:
-            # Admin, Gerência e Auditor possuem visão global
             opcoes_d = ["Todos", "SDR", "Especialista", "Venda de Ingresso", "Auditor"]
             st.session_state.departamento_selecionado = st.selectbox(
                 "Filtrar sistema para:", 
@@ -262,23 +263,19 @@ def main():
                 index=opcoes_d.index(st.session_state.departamento_selecionado) if st.session_state.departamento_selecionado in opcoes_d else 0
             )
         else:
-            # SDR normal também fica travado no próprio dept no background
             st.session_state.departamento_selecionado = meu_dept
 
         # ==========================================================
-        # 🔔 GATILHO DO MODAL DE NOTIFICAÇÕES
+        # 🔔 GATILHO DO MODAL DE NOTIFICAÇÕES (AGORA VISÍVEL PARA TODOS)
         # ==========================================================
         res_n = buscar_contagem_notificacoes(nome_completo, nivel)
         qtd_notificacoes = int(res_n if res_n else 0)
         
-        if nivel not in ["GESTAO", "GERENCIA"]: 
-            # Define o tipo de botão (Vermelho chamativo se tiver pendência)
-            tipo_btn = "primary" if qtd_notificacoes > 0 else "secondary"
-            texto_btn = f"🔔 {qtd_notificacoes} Nova(s) Notificação(ões)" if qtd_notificacoes > 0 else "🔔 Notificações"
-            
-            if st.button(texto_btn, use_container_width=True, type=tipo_btn):
-                # Ao clicar, abre o modal de notificações sem mudar de página
-                modal_notificacoes(nome_completo)
+        tipo_btn = "primary" if qtd_notificacoes > 0 else "secondary"
+        texto_btn = f"🔔 {qtd_notificacoes} Nova(s) Notificação(ões)" if qtd_notificacoes > 0 else "🔔 Notificações"
+        
+        if st.button(texto_btn, use_container_width=True, type=tipo_btn):
+            modal_notificacoes(nome_completo)
                 
         st.divider()
 
@@ -301,32 +298,25 @@ def main():
             
         # 2. VISÃO DA LIDERANÇA / TÉCNICO
         else:
-            # MONITORIA e CONTESTAÇÃO: Apenas Admin, Gerência e Auditor
             if nivel in ["ADMIN", "GERENCIA", "AUDITOR"]:
                 menu("📝 NOVA MONITORIA", "MONITORIA")
                 menu("⚖️ CONTESTAÇÕES", "CONTESTACAO")
             
-            # HISTÓRICO GERAL: Todos os níveis de liderança vêm
             menu("📚 HISTÓRICO GERAL", "HISTORICO")
             
-            # RELATÓRIOS: Admin, Gerência e Auditor e Gestão
             if nivel in ["ADMIN", "GERENCIA", "AUDITOR", "GESTAO"]:
                 menu("📋 RELATÓRIOS", "RELATORIOS")
             
-            # MATRIZ DE DECISÃO (PDI): Apenas Admin, Gerência e Gestão
             if nivel in ["ADMIN", "GERENCIA", "GESTAO"]:
                 menu("🎯 MATRIZ DE DECISÃO", "PDI") 
             
-            # CONFIGURAÇÃO DE CRITÉRIOS: Apenas Admin e Auditor
             if nivel in ["ADMIN", "AUDITOR"]:
                 menu("⚙️ CONFIG. CRITÉRIOS", "CONFIG_CRITERIOS")
             
-            # GESTÃO DE USUÁRIOS: Admin e Gerência
             if nivel in ["ADMIN", "GERENCIA"]:
                 menu("👤 CADASTRAR USUÁRIO", "CADASTRO")
                 menu("👥 GESTÃO DE EQUIPE", "GESTAO_USUARIOS")
                 
-            # AUDITORIA DO SISTEMA: Exclusivo Admin
             if nivel == "ADMIN":
                 st.markdown("---")
                 menu("🕵️ AUDITORIA", "AUDITORIA")

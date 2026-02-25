@@ -18,9 +18,12 @@ def render_dashboard():
         st.info("💡 Nenhuma monitoria encontrada no banco de dados.")
         return
 
-    # 2. Tratamento de Dados Base
-    df['nota'] = pd.to_numeric(df['nota'], errors='coerce')
-    df['criado_em'] = pd.to_datetime(df['criado_em'])
+    # 2. TRATAMENTO SEGURO DE DADOS BASE (Proteção contra erros .dt)
+    df['nota'] = pd.to_numeric(df['nota'], errors='coerce').fillna(0)
+    
+    # Converte para datetime e remove registros corrompidos antes de ordenar
+    df['criado_em'] = pd.to_datetime(df['criado_em'], errors='coerce')
+    df = df.dropna(subset=['criado_em'])
     df = df.sort_values(by='criado_em')
 
     # ==========================================================
@@ -66,12 +69,14 @@ def render_dashboard():
     # Aplicação dos Filtros de Nome e Data
     df_filtrado = df.copy()
     
+    # Tratamento de string mais seguro
     if nivel_usuario not in ["ADMIN", "GESTAO", "AUDITOR", "GERENCIA"]:
-        df_filtrado = df_filtrado[df_filtrado['sdr'].str.strip().str.upper() == nome_completo_logado.strip().upper()]
+        df_filtrado = df_filtrado[df_filtrado['sdr'].astype(str).str.strip().str.upper() == nome_completo_logado.strip().upper()]
     elif sdr_escolhido != "Ver Todos":
         df_filtrado = df_filtrado[df_filtrado['sdr'] == sdr_escolhido]
 
     if isinstance(intervalo_datas, tuple) and len(intervalo_datas) == 2:
+        # Pega as datas com segurança
         df_filtrado = df_filtrado[
             (df_filtrado['criado_em'].dt.date >= intervalo_datas[0]) & 
             (df_filtrado['criado_em'].dt.date <= intervalo_datas[1])
@@ -84,7 +89,7 @@ def render_dashboard():
     ids_filtrados = df_filtrado['id'].tolist()
     media_nota = df_filtrado['nota'].mean()
 
-    # Processamento de Contestações (Calculado antes para usar nos cards e gráficos)
+    # Processamento Seguro de Contestações
     df_cont_filtrado = pd.DataFrame()
     total_cont = pendentes = aceitas = taxa_contestacao = taxa_reversao = 0
     
@@ -112,7 +117,6 @@ def render_dashboard():
         # ----------------------------------------------------------
         # 1. RANKING ESTRATÉGICO (Top 3)
         # ----------------------------------------------------------
-        # CORREÇÃO AQUI: Adicionado "GERENCIA" na lista abaixo 👇
         if nivel_usuario in ["ADMIN", "GESTAO", "AUDITOR", "GERENCIA"] and sdr_escolhido == "Ver Todos":
             st.markdown("### 🏆 Elite da Qualidade (Top 3)")
             
@@ -157,7 +161,7 @@ def render_dashboard():
         st.markdown("### 🎯 Resumo de Entregas")
         m1, m2, m3 = st.columns(3)
         m1.metric("Total de Monitorias", len(df_filtrado))
-        m2.metric("Média de Qualidade", f"{media_nota:.1f}%", delta=f"{media_nota - 90:.1f}%" if media_nota else None, help="A meta de qualidade é 90%")
+        m2.metric("Média de Qualidade", f"{media_nota:.1f}%", delta=f"{media_nota - 90:.1f}%" if pd.notna(media_nota) else None, help="A meta de qualidade é 90%")
         m3.metric("Meta do Período", "90%")
         
         if nivel_usuario in ["ADMIN", "GESTAO", "AUDITOR", "GERENCIA"]:
@@ -177,10 +181,10 @@ def render_dashboard():
         with col_gauge:
             fig_gauge = go.Figure(go.Indicator(
                 mode = "gauge+number",
-                value = media_nota,
-                number = {'suffix': "%"},
+                value = media_nota if pd.notna(media_nota) else 0,
+                number = {'suffix': "%", 'font': {'color': "white"}},
                 gauge = {
-                    'axis': {'range': [0, 100]},
+                    'axis': {'range': [0, 100], 'tickcolor': "white"},
                     'steps': [
                         {'range': [0, 70], 'color': "#ff4b4b"},
                         {'range': [70, 90], 'color': "#ffa500"},
@@ -205,7 +209,8 @@ def render_dashboard():
         fig_funil = go.Figure(go.Funnel(
             y=funil_etapas, x=funil_valores,
             textinfo="value+percent initial",
-            marker={"color": ["#1f77b4", "#ff7f0e", "#d62728", "#2ca02c"]}
+            marker={"color": ["#1f77b4", "#ff7f0e", "#d62728", "#2ca02c"]},
+            textfont=dict(color="white")
         ))
         fig_funil.update_layout(height=400, margin=dict(l=20, r=20, t=20, b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font={'color': "white"})
         st.plotly_chart(fig_funil, use_container_width=True)
@@ -226,7 +231,7 @@ def render_dashboard():
                 hole=0.5, color='Status', color_discrete_map=cores
             )
             fig_pie.update_layout(height=450, margin=dict(l=0, r=0, t=20, b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font={'color': "white"}, showlegend=True)
-            fig_pie.update_traces(textposition='inside', textinfo='percent+label+value')
+            fig_pie.update_traces(textposition='inside', textinfo='percent+label+value', textfont_color="white")
             st.plotly_chart(fig_pie, use_container_width=True)
         else:
             st.info("Nenhuma contestação aberta neste período.")
@@ -276,14 +281,12 @@ def render_dashboard():
             st.markdown("### 🕵️ Entregas da Equipe de Qualidade")
             st.markdown("Acompanhe o volume de avaliações realizadas por cada Auditor/Gestor.")
             
-            # Agrupa as monitorias pelo NOME DO AUDITOR
             produtividade_auditor = df_filtrado.groupby('monitor_responsavel').agg(
                 qtd_avaliacoes=('id', 'count'),
                 nota_media_dada=('nota', 'mean')
             ).reset_index().sort_values(by='qtd_avaliacoes', ascending=False)
             
             if not produtividade_auditor.empty:
-                # 1. Gráfico em tela cheia (Em cima)
                 fig_aud = px.bar(
                     produtividade_auditor.sort_values('qtd_avaliacoes', ascending=True), 
                     x='qtd_avaliacoes', y='monitor_responsavel', orientation='h',
@@ -297,7 +300,6 @@ def render_dashboard():
                 st.divider()
                 st.markdown("#### Detalhamento por Avaliador")
                 
-                # 2. Tabela logo abaixo, tela cheia (Em baixo)
                 st.dataframe(
                     produtividade_auditor,
                     column_config={

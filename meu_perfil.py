@@ -42,7 +42,7 @@ def render_meu_perfil():
         return
 
     # ==========================================================
-    # 🏅 LÓGICA DE MEDALHAS (GAMIFICAÇÃO)
+    # 🏅 LÓGICA DE MEDALHAS (GAMIFICAÇÃO MENSAL E VITALÍCIA)
     # ==========================================================
     df_mon_bruto = get_all_records_db("monitorias")
     df_comp_bruto = get_all_records_db("avaliacoes_comportamentais")
@@ -51,13 +51,20 @@ def render_meu_perfil():
     mes_atual = datetime.now().strftime('%m/%Y')
     medalhas_desbloqueadas = []
     
-    # Filtro de dados do usuário
+    # ----------------------------------------------------
+    # Filtro de dados e conversão segura para o SDR logado
+    # ----------------------------------------------------
     df_mon = pd.DataFrame()
     if df_mon_bruto is not None and not df_mon_bruto.empty:
         df_mon = df_mon_bruto[df_mon_bruto['sdr'].astype(str).str.strip().str.upper() == user_nome_exibicao.upper()].copy()
         if not df_mon.empty:
             df_mon['criado_em'] = pd.to_datetime(df_mon['criado_em'], errors='coerce')
             df_mon['nota'] = pd.to_numeric(df_mon['nota'], errors='coerce').fillna(0)
+
+    # Separação do mês atual para os desafios mensais
+    df_mon_mes = pd.DataFrame()
+    if not df_mon.empty:
+        df_mon_mes = df_mon[df_mon['criado_em'].dt.strftime('%m/%Y') == mes_atual].copy()
 
     df_comp = pd.DataFrame()
     if df_comp_bruto is not None and not df_comp_bruto.empty:
@@ -66,33 +73,57 @@ def render_meu_perfil():
     df_cont = pd.DataFrame()
     if df_cont_bruto is not None and not df_cont_bruto.empty:
         col_sdr = 'sdr_nome' if 'sdr_nome' in df_cont_bruto.columns else 'sdr'
-        if col_sdr in df_cont_bruto.columns:
-            df_cont = df_cont_bruto[df_cont_bruto[col_sdr].astype(str).str.strip().str.upper() == user_nome_exibicao.upper()].copy()
+        df_cont = df_cont_bruto[df_cont_bruto[col_sdr].astype(str).str.strip().str.upper() == user_nome_exibicao.upper()].copy()
 
-    # Regras de Desbloqueio
-    if not df_mon.empty and (df_mon['nota'] >= 100).any(): medalhas_desbloqueadas.append("Sniper")
-    if not df_mon.empty and len(df_mon) >= 3:
-        notas = df_mon.sort_values('criado_em', ascending=False)['nota'].tolist()
-        for i in range(len(notas) - 2):
-            if notas[i] >= 90 and notas[i+1] >= 90 and notas[i+2] >= 90:
+    # ----------------------------------------------------
+    # REGRAS DE DESBLOQUEIO DE MEDALHAS
+    # ----------------------------------------------------
+
+    # 1. 🎯 Sniper (MENSAL: Tira nota 100% no mês atual)
+    if not df_mon_mes.empty and (df_mon_mes['nota'] >= 100).any():
+        medalhas_desbloqueadas.append("Sniper")
+
+    # 2. 🔥 On Fire (MENSAL: 3 notas seguidas >= 90% no mês atual)
+    if not df_mon_mes.empty and len(df_mon_mes) >= 3:
+        notas_mes = df_mon_mes.sort_values('criado_em')['nota'].tolist()
+        for i in range(len(notas_mes) - 2):
+            if notas_mes[i] >= 90 and notas_mes[i+1] >= 90 and notas_mes[i+2] >= 90:
                 medalhas_desbloqueadas.append("OnFire")
                 break
-    if not df_cont.empty and (df_cont['status'].astype(str).str.upper() == 'ACEITA').any(): medalhas_desbloqueadas.append("Advogado")
-    if not df_comp.empty: medalhas_desbloqueadas.append("Evolucao")
 
-    # Dicionário de Definições
-    todas_medalhas = {
-        "Talento": {"icon": "⭐", "nome": "Talento Supremo", "desc": "Quadrante Verde na Matriz 9-Box.", "cor": "#00cc96"},
-        "Sniper": {"icon": "🎯", "nome": "Sniper da Qualidade", "desc": "Nota 100% em monitoria técnica.", "cor": "#ff4b4b"},
-        "OnFire": {"icon": "🔥", "nome": "On Fire", "desc": "3 monitorias seguidas acima de 90%.", "cor": "#ff9900"},
-        "Advogado": {"icon": "⚖️", "nome": "Advogado de Defesa", "desc": "Contestação aceita com sucesso.", "cor": "#1f77b4"},
-        "Evolucao": {"icon": "📚", "nome": "Sede de Evolução", "desc": "Já recebeu feedback de PDI.", "cor": "#9467bd"},
-        "Muralha": {"icon": "🛡️", "nome": "Muralha", "desc": "Mês sem erros fatais.", "cor": "#8c564b"}
-    }
+    # 3. 🛡️ Muralha (MENSAL: Mês sem erros fatais/nota zero)
+    if not df_mon_mes.empty and (df_mon_mes['nota'] > 0).all():
+        medalhas_desbloqueadas.append("Muralha")
+
+    # 4. ⭐ Talento Supremo (MENSAL: Quadrante Verde no mês atual)
+    if not df_comp.empty and not df_mon_mes.empty:
+        df_comp_mes = df_comp[df_comp['mes_referencia'] == mes_atual]
+        if not df_comp_mes.empty:
+            pdi_nota = (float(df_comp_mes.iloc[0]['media_comportamental']) / 5.0) * 100
+            qa_media_mes = df_mon_mes['nota'].mean()
+            if qa_media_mes >= 85 and pdi_nota >= 80:
+                medalhas_desbloqueadas.append("Talento")
+
+    # 5. ⚖️ Advogado (VITALÍCIA: Uma contestação Aceita na história)
+    if not df_cont.empty and (df_cont['status'].astype(str).str.upper() == 'ACEITA').any():
+        medalhas_desbloqueadas.append("Advogado")
+
+    # 6. 📚 Sede de Evolução (VITALÍCIA: Possui pelo menos 1 PDI)
+    if not df_comp.empty:
+        medalhas_desbloqueadas.append("Evolucao")
 
     # ==========================================================
     # 🖼️ CABEÇALHO (ESTILO GITHUB)
     # ==========================================================
+    todas_medalhas = {
+        "Talento": {"icon": "⭐", "nome": "Talento Supremo", "desc": "Quadrante Verde no mês atual.", "cor": "#00cc96", "tipo": "MENSAL"},
+        "Sniper": {"icon": "🎯", "nome": "Sniper da Qualidade", "desc": "Nota 100% no mês atual.", "cor": "#ff4b4b", "tipo": "MENSAL"},
+        "OnFire": {"icon": "🔥", "nome": "On Fire", "desc": "3 calls > 90% seguidas no mês.", "cor": "#ff9900", "tipo": "MENSAL"},
+        "Muralha": {"icon": "🛡️", "nome": "Muralha", "desc": "Mês sem erros fatais (Nota 0).", "cor": "#8c564b", "tipo": "MENSAL"},
+        "Advogado": {"icon": "⚖️", "nome": "Advogado de Defesa", "desc": "Contestação aceita.", "cor": "#1f77b4", "tipo": "VITALÍCIA"},
+        "Evolucao": {"icon": "📚", "nome": "Sede de Evolução", "desc": "Recebeu feedback de PDI.", "cor": "#9467bd", "tipo": "VITALÍCIA"}
+    }
+
     url_foto_header = foto_atual if foto_atual else f"https://ui-avatars.com/api/?name={user_nome_exibicao.replace(' ', '+')}&background=ea580c&color=fff"
     
     html_badges_topo = ""
@@ -112,7 +143,7 @@ def render_meu_perfil():
     ''', unsafe_allow_html=True)
 
     # ==========================================================
-    # 🏆 VITRINE DE TROFÉUS
+    # 🏆 VITRINE DE TROFÉUS (COM TIPO DA MEDALHA)
     # ==========================================================
     with st.expander("🏆 Sua Galeria de Troféus e Conquistas", expanded=True):
         col1, col2, col3 = st.columns(3)
@@ -121,17 +152,18 @@ def render_meu_perfil():
             conq = m_id in medalhas_desbloqueadas
             with cols[idx % 3]:
                 st.markdown(f"""
-                <div style="background-color: {m_dados['cor'] if conq else '#262626'}15; border: 1px solid {m_dados['cor'] if conq else '#444'}; border-radius: 10px; padding: 15px; text-align: center; margin-bottom: 15px; height: 160px; display: flex; flex-direction: column; justify-content: center;">
+                <div style="background-color: {m_dados['cor'] if conq else '#262626'}15; border: 1px solid {m_dados['cor'] if conq else '#444'}; border-radius: 10px; padding: 15px; text-align: center; margin-bottom: 15px; height: 170px; display: flex; flex-direction: column; justify-content: center;">
                     <div style="font-size: 35px;">{m_dados['icon'] if conq else '🔒'}</div>
                     <div style="font-weight: bold; font-size: 14px; color: white;">{m_dados['nome']}</div>
                     <div style="font-size: 11px; color: #aaa; margin-top: 5px;">{m_dados['desc']}</div>
+                    <div style="font-size: 9px; color: {m_dados['cor'] if conq else '#666'}; margin-top: 8px; font-weight: bold;">{m_dados['tipo']}</div>
                 </div>
                 """, unsafe_allow_html=True)
 
     st.divider()
 
     # ==========================================================
-    # ⚙️ CONFIGURAÇÕES (FOTO COM PREVIEW E SENHA)
+    # ⚙️ CONFIGURAÇÕES (FOTO COM PREVIEW E SENHA FIX)
     # ==========================================================
     c_foto, c_senha = st.columns(2)
 
@@ -139,10 +171,9 @@ def render_meu_perfil():
         st.subheader("🖼️ Foto de Perfil")
         novo_arquivo = st.file_uploader("Selecione uma foto:", type=['png', 'jpg', 'jpeg'], key="perfil_uploader", label_visibility="collapsed")
         
-        # --- LÓGICA DE PREVIEW ---
+        # LÓGICA DE PREVIEW CORRIGIDA
         if novo_arquivo:
             st.markdown("**Prévia da nova foto:**")
-            # Mostra a imagem redonda como ficará no perfil
             st.image(novo_arquivo, width=120)
             
             if st.button("✅ Confirmar e Salvar Foto", use_container_width=True):
@@ -164,18 +195,27 @@ def render_meu_perfil():
 
     with c_senha:
         st.subheader("🔐 Segurança")
-        with st.form("form_senha_perfil", clear_on_submit=True):
+        # SUBMIT DO FORMULÁRIO CORRIGIDO
+        with st.form("form_senha_perfil_final", clear_on_submit=True):
             s_at = st.text_input("Senha Atual", type="password")
             s_nv = st.text_input("Nova Senha", type="password")
             s_cf = st.text_input("Confirmar", type="password")
-            if st.form_submit_button("Atualizar Senha", use_container_width=True):
-                if s_nv != s_cf: st.error("As senhas não coincidem.")
+            
+            # O st.form_submit_button PRECISA ser o último elemento do escopo
+            btn_save = st.form_submit_button("Atualizar Senha", use_container_width=True)
+            
+            if btn_save:
+                if s_nv != s_cf: 
+                    st.error("As senhas não coincidem.")
+                elif len(s_nv) < 4:
+                    st.error("A nova senha deve ter pelo menos 4 caracteres.")
                 else:
                     h_dig = hash_password(s_at)
                     if h_dig == senha_banco or s_at.strip() == senha_banco:
                         supabase.table("usuarios").update({"senha": hash_password(s_nv)}).eq("id", meu_id).execute()
-                        st.success("Senha alterada!")
+                        st.success("Senha alterada com sucesso!")
                         st.balloons()
                         time.sleep(1)
                         st.rerun()
-                    else: st.error("Senha atual incorreta.")
+                    else: 
+                        st.error("Senha atual incorreta.")
