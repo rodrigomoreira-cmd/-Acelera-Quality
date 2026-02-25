@@ -29,12 +29,16 @@ def render_contestacao():
     # Padroniza a data de criação com o Fuso Horário de Brasília
     fuso = pytz.timezone('America/Sao_Paulo')
     if 'criado_em' in df_monitorias.columns:
-        df_monitorias['criado_em'] = pd.to_datetime(df_monitorias['criado_em'])
-        # Converte para o fuso correto dependendo de como vem do banco (UTC ou não)
-        if df_monitorias['criado_em'].dt.tz is None:
-            df_monitorias['criado_em'] = df_monitorias['criado_em'].dt.tz_localize('UTC').dt.tz_convert(fuso)
-        else:
-            df_monitorias['criado_em'] = df_monitorias['criado_em'].dt.tz_convert(fuso)
+        # CORREÇÃO: Força a conversão para datetime (Ignora erros e transforma em NaT)
+        df_monitorias['criado_em'] = pd.to_datetime(df_monitorias['criado_em'], errors='coerce')
+        
+        # Garante que a coluna não esteja 100% vazia antes de aplicar os fusos
+        if not df_monitorias['criado_em'].isna().all():
+            # Converte para o fuso correto dependendo de como vem do banco (UTC ou não)
+            if df_monitorias['criado_em'].dt.tz is None:
+                df_monitorias['criado_em'] = df_monitorias['criado_em'].dt.tz_localize('UTC').dt.tz_convert(fuso)
+            else:
+                df_monitorias['criado_em'] = df_monitorias['criado_em'].dt.tz_convert(fuso)
 
     if df_contestacoes is not None and not df_contestacoes.empty:
         df_contestacoes['id'] = df_contestacoes['id'].astype(str).str.strip()
@@ -58,9 +62,9 @@ def render_contestacao():
             st.success("Você ainda não possui monitorias registradas.")
             return
 
-        # Calcula quantos dias se passaram desde a monitoria
-        hoje = datetime.now(fuso).date()
-        minhas_monitorias['dias_passados'] = (hoje - minhas_monitorias['criado_em'].dt.date).dt.days
+        # CORREÇÃO: Calcula quantos dias se passaram sem conflito de tipo (Date vs Datetime)
+        hoje = datetime.now(fuso)
+        minhas_monitorias['dias_passados'] = (hoje - minhas_monitorias['criado_em']).dt.days
 
         seus_ids_contestados = []
         if df_contestacoes is not None and not df_contestacoes.empty:
@@ -89,8 +93,11 @@ def render_contestacao():
                 opcoes_mon = {}
                 for _, row in disponiveis.iterrows():
                     dias_restantes = 3 - row['dias_passados']
-                    aviso_dias = "⏳ Último dia!" if dias_restantes == 0 else f"⏳ {dias_restantes} dia(s) restante(s)"
-                    label = f"📅 {row['criado_em'].strftime('%d/%m/%Y')} | Nota: {row['nota']}% | Auditor: {row['monitor_responsavel']} ({aviso_dias})"
+                    aviso_dias = "⏳ Último dia!" if dias_restantes <= 0 else f"⏳ {dias_restantes} dia(s) restante(s)"
+                    
+                    # Evita erro na formatação da data se estiver vazia
+                    dt_format = row['criado_em'].strftime('%d/%m/%Y') if pd.notna(row['criado_em']) else "Data N/D"
+                    label = f"📅 {dt_format} | Nota: {row['nota']}% | Auditor: {row['monitor_responsavel']} ({aviso_dias})"
                     opcoes_mon[label] = row['id']
                 
                 escolha_label = st.selectbox("Selecione a Avaliação dentro do prazo:", [""] + list(opcoes_mon.keys()))
@@ -188,8 +195,10 @@ def render_contestacao():
                 minhas_cont = df_contestacoes[df_contestacoes[coluna_filtro].astype(str).str.strip().str.upper() == nome_completo.strip().upper()].copy()
                 
                 if not minhas_cont.empty:
+                    # CORREÇÃO: Força datetime e formata para string sem gerar o erro dt
                     if 'criado_em' in minhas_cont.columns:
-                        minhas_cont['Data'] = pd.to_datetime(minhas_cont['criado_em']).dt.strftime('%d/%m/%Y')
+                        minhas_cont['criado_em'] = pd.to_datetime(minhas_cont['criado_em'], errors='coerce')
+                        minhas_cont['Data'] = minhas_cont['criado_em'].dt.strftime('%d/%m/%Y').fillna("-")
                     else:
                         minhas_cont['Data'] = "-"
                         
@@ -256,7 +265,7 @@ def render_contestacao():
                             
                     data_raw = row.get('criado_em_x', row.get('criado_em'))
                     if pd.notna(data_raw):
-                        data_formatada = pd.to_datetime(data_raw).strftime('%d/%m/%Y %H:%M')
+                        data_formatada = pd.to_datetime(data_raw, errors='coerce').strftime('%d/%m/%Y %H:%M')
                     else:
                         data_formatada = "Data N/D"
 
@@ -296,6 +305,17 @@ def render_contestacao():
                                     }).eq("id", id_cont_limpo).execute()
                                     
                                     registrar_auditoria("JULGAMENTO DE CONTESTAÇÃO", f"A contestação de {nome_colaborador} foi julgada como '{decisao}'.", nome_colaborador)
+
+                                    # ==========================================================
+                                    # 🔔 GATILHO DE MEDALHA: ADVOGADO DE DEFESA
+                                    # ==========================================================
+                                    if decisao == "Aceita":
+                                        msg_advogado = "⚖️ PARABÉNS! Sua contestação foi aceita. Você provou seu ponto e desbloqueou a medalha Advogado de Defesa!"
+                                        supabase.table("notificacoes").insert({
+                                            "usuario": nome_colaborador,
+                                            "mensagem": msg_advogado,
+                                            "lida": False
+                                        }).execute()
                                     
                                     st.success("Julgamento registrado e auditado!")
                                     get_all_records_db.clear()
@@ -308,8 +328,10 @@ def render_contestacao():
                 if not julgadas.empty:
                     col_exib = 'sdr_y' if 'sdr_y' in julgadas.columns else ('sdr_x' if 'sdr_x' in julgadas.columns else ('sdr' if 'sdr' in julgadas.columns else 'sdr_nome'))
                     
+                    # CORREÇÃO: Força conversão e formatação segura sem falhas
                     if 'criado_em_x' in julgadas.columns:
-                        julgadas['Data_Vis'] = pd.to_datetime(julgadas['criado_em_x']).dt.strftime('%d/%m/%Y')
+                        julgadas['criado_em_x'] = pd.to_datetime(julgadas['criado_em_x'], errors='coerce')
+                        julgadas['Data_Vis'] = julgadas['criado_em_x'].dt.strftime('%d/%m/%Y').fillna("-")
                     else:
                         julgadas['Data_Vis'] = "-"
                         
