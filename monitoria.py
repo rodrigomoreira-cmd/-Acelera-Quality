@@ -6,6 +6,7 @@ from database import salvar_monitoria_auditada, supabase
 
 def render_nova_monitoria():
     dept_selecionado = st.session_state.get('departamento_selecionado', 'Todos')
+    nivel_logado = st.session_state.get('nivel', 'USUARIO').upper()
     
     st.title(f"📝 Nova Monitoria - {dept_selecionado}")
     st.markdown("Preencha o checklist. Itens marcados com 🚩 são **Fatais** e zeram a nota em caso de erro.")
@@ -18,11 +19,21 @@ def render_nova_monitoria():
         res_crit = supabase.table("criterios_qa").select("*").eq("esta_ativo", True).execute()
         df_criterios = pd.DataFrame(res_crit.data) if res_crit.data else pd.DataFrame()
         
-        res_users = supabase.table("usuarios").select("nome, departamento, nivel").eq("esta_ativo", True).execute()
+        # Adicionado 'email' ao select para permitir o filtro de segurança
+        res_users = supabase.table("usuarios").select("nome, email, departamento, nivel").eq("esta_ativo", True).execute()
         df_users = pd.DataFrame(res_users.data) if res_users.data else pd.DataFrame()
     except Exception as e:
         st.error(f"Erro de conexão com o banco: {e}")
         return
+
+    # ==========================================================
+    # 🛡️ TRAVA DE SEGURANÇA: OCULTAR ADMIN MESTRE
+    # ==========================================================
+    if nivel_logado != "ADMIN" and not df_users.empty:
+        if 'email' in df_users.columns:
+            df_users = df_users[df_users['email'] != 'admin@grupoacelerador.com.br'].copy()
+        elif 'nome' in df_users.columns:
+            df_users = df_users[df_users['nome'] != 'admin@grupoacelerador.com.br'].copy()
 
     # Filtro de Departamento
     if not df_criterios.empty and dept_selecionado != "Todos":

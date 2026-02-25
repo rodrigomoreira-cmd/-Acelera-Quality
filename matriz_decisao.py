@@ -75,6 +75,15 @@ def render_pdi():
         st.warning("Sem usuários cadastrados.")
         return
 
+    # ==========================================================
+    # 🛡️ TRAVA DE SEGURANÇA: OCULTAR ADMIN MESTRE
+    # ==========================================================
+    if nivel_logado != "ADMIN":
+        if 'email' in df_users.columns:
+            df_users = df_users[df_users['email'] != 'admin@grupoacelerador.com.br'].copy()
+        elif 'nome' in df_users.columns:
+            df_users = df_users[df_users['nome'] != 'admin@grupoacelerador.com.br'].copy()
+
     # Padronização de nomes para evitar bugs de case-sensitive
     df_users['nome_comp'] = df_users['nome'].str.strip().str.upper()
 
@@ -254,8 +263,18 @@ def render_pdi():
                                 if aval_atual is not None: supabase.table("avaliacoes_comportamentais").delete().eq("id", aval_atual['id']).execute()
                                 supabase.table("avaliacoes_comportamentais").insert(payload).execute()
                                 
-                                # 👇 A LINHA QUE FALTAVA PARA SALVAR NO LOG DE AUDITORIA 👇
-                                registrar_auditoria("PDI", f"Avaliou {colaborador_sel} ({mes_sel})", colaborador_sel)
+                                registrar_auditoria("PDI", f"Avaliou {colaborador_sel} ({mes_sel})", colaborador_sel, nome_logado)
+
+                                # ==========================================================
+                                # 🔔 GATILHO DE MEDALHA: TALENTO (Gamificação Automática)
+                                # ==========================================================
+                                if nota_tecnica_media >= 85 and media_final >= 4.0:
+                                    msg_talento = f"⭐ INCRÍVEL! Você atingiu o Quadrante Verde (Talento) na matriz 9-Box em {mes_sel}! Medalha Talento desbloqueada!"
+                                    supabase.table("notificacoes").insert({
+                                        "usuario": colaborador_sel,
+                                        "mensagem": msg_talento,
+                                        "lida": False
+                                    }).execute()
 
                                 st.success("✅ Avaliação salva com sucesso!")
                                 
@@ -304,7 +323,12 @@ def render_pdi():
             st.subheader(f"📍 Matriz Global - {mes_sel}")
             dados_matriz = []
             
-            for sdr in df_equipe['nome'].dropna().unique():
+            # Garante que o usuário mestre também não apareça na plotagem da Matriz
+            equipe_plotagem = df_equipe['nome'].dropna().unique()
+            if nivel_logado != "ADMIN":
+                equipe_plotagem = [n for n in equipe_plotagem if n != 'admin@grupoacelerador.com.br']
+
+            for sdr in equipe_plotagem:
                 b_eq = sdr.strip().upper()
                 t_m, c_m = 0.0, 0.0
                 tem_pdi = False

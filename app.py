@@ -10,10 +10,7 @@ from contestacao import render_contestacao
 from cadastro import render_cadastro
 from meus_resultados import render_meus_resultados 
 from usuarios_gestao import render_usuario_gestao 
-
-# 👇 O NOME CORRETO DA FUNÇÃO FOI AJUSTADO AQUI 👇
 from meu_perfil import render_meu_perfil 
-
 from auditoria import render_auditoria 
 from relatorios import render_relatorios 
 from gestao_criterios import render_gestao_criterios 
@@ -28,7 +25,8 @@ from database import get_all_records_db, supabase, buscar_contagem_notificacoes,
 def modal_notificacoes(nome_usuario):
     st.markdown("Acompanhe os seus avisos, resultados de PDI e contestações:")
     try:
-        res = supabase.table("notificacoes").select("*").eq("usuario", nome_usuario).execute()
+        # Busca apenas as não lidas para limpar a visão
+        res = supabase.table("notificacoes").select("*").eq("usuario", nome_usuario).eq("lida", False).execute()
         notifs = res.data if res.data else []
         
         if not notifs:
@@ -37,9 +35,8 @@ def modal_notificacoes(nome_usuario):
             notifs = sorted(notifs, key=lambda x: x.get('id', 0), reverse=True)
             
             for n in notifs:
-                lida = n.get('lida', False)
-                cor_borda = "#ff4b4b" if not lida else "gray"
-                icone = "🔴" if not lida else "⚪"
+                cor_borda = "#ff4b4b"
+                icone = "🔴"
                 msg = n.get('mensagem', 'Nova notificação')
                 
                 st.markdown(f"""
@@ -122,6 +119,15 @@ def render_historico_geral(nivel, nome_completo):
 
     df_exibicao['Data'] = df_exibicao['criado_em'].dt.strftime('%d/%m/%Y %H:%M')
     
+    # ==========================================================
+    # 🛡️ REGRA DE SEGURANÇA: OCULTAR ADMIN MESTRE
+    # ==========================================================
+    if nivel != "ADMIN":
+        df_exibicao = df_exibicao[
+            (df_exibicao['sdr'] != 'admin@grupoacelerador.com.br') & 
+            (df_exibicao['monitor_responsavel'] != 'admin@grupoacelerador.com.br')
+        ].copy()
+
     if nivel not in ["ADMIN", "GESTAO", "AUDITOR", "GERENCIA"]:
         df_exibicao = df_exibicao[df_exibicao['sdr'].str.strip().str.upper() == nome_completo.strip().upper()].copy()
     else:
@@ -237,11 +243,26 @@ def main():
         st.markdown(f"<div style='text-align: center; margin-top: 5px; margin-bottom: 15px;'><span style='background-color: #ff4b4b22; color: #ff4b4b; padding: 4px 15px; border-radius: 20px; font-size: 13px; font-weight: bold; border: 1px solid #ff4b4b44; text-transform: uppercase;'>{rotulo_perfil}</span></div>", unsafe_allow_html=True)
         st.divider()
         
-        if nivel in ["ADMIN", "AUDITOR", "GERENCIA"]:
-            st.markdown("**🏢 Visão por Departamento**")
+        # ==========================================================
+        # 🏢 TRAVA DE VISÃO POR DEPARTAMENTO
+        # ==========================================================
+        st.markdown("**🏢 Visão por Departamento**")
+        
+        if nivel == "GESTAO":
+            # Trava Izabela/Gestão para ver apenas o próprio time e bloqueia o select
+            st.session_state.departamento_selecionado = meu_dept
+            st.selectbox("Filtrar sistema para:", [meu_dept], index=0, disabled=True)
+            st.info(f"Visualizando Equipe: **{meu_dept}**")
+        elif nivel in ["ADMIN", "AUDITOR", "GERENCIA"]:
+            # Admin, Gerência e Auditor possuem visão global
             opcoes_d = ["Todos", "SDR", "Especialista", "Venda de Ingresso", "Auditor"]
-            st.session_state.departamento_selecionado = st.selectbox("Filtrar sistema para:", opcoes_d, index=opcoes_d.index(st.session_state.departamento_selecionado) if st.session_state.departamento_selecionado in opcoes_d else 0)
+            st.session_state.departamento_selecionado = st.selectbox(
+                "Filtrar sistema para:", 
+                opcoes_d, 
+                index=opcoes_d.index(st.session_state.departamento_selecionado) if st.session_state.departamento_selecionado in opcoes_d else 0
+            )
         else:
+            # SDR normal também fica travado no próprio dept no background
             st.session_state.departamento_selecionado = meu_dept
 
         # ==========================================================
@@ -261,6 +282,9 @@ def main():
                 
         st.divider()
 
+        # ==========================================================
+        # 🕹️ LÓGICA DE MENUS E HIERARQUIA
+        # ==========================================================
         def menu(label, target):
             if st.button(label, use_container_width=True, type="primary" if st.session_state.current_page == target else "secondary"):
                 st.session_state.current_page = target
@@ -268,27 +292,41 @@ def main():
 
         menu("📊 DASHBOARD", "DASHBOARD")
         
-        # Lógica de menus baseada no nível de acesso
+        # 1. VISÃO DO SDR / ESPECIALISTA / VENDA DE INGRESSO
         if nivel not in ["ADMIN", "GESTAO", "AUDITOR", "GERENCIA"]:
-            # VISÃO DO SDR / ESPECIALISTA / VENDA DE INGRESSO
             menu("⚖️ CONTESTAR NOTA", "CONTESTACAO")
             menu("📈 MEUS RESULTADOS", "MEUS_RESULTADOS")
             menu("📚 HISTÓRICO", "HISTORICO")
             menu("🎯 MEU PDI", "PDI")  
-        else:
-            # VISÃO DA LIDERANÇA
-            menu("📝 NOVA MONITORIA", "MONITORIA")
-            menu("⚖️ CONTESTAÇÕES", "CONTESTACAO")
-            menu("📚 HISTÓRICO GERAL", "HISTORICO")
-            menu("📋 RELATÓRIOS", "RELATORIOS")
-            menu("🎯 MATRIZ DE DECISÃO", "PDI") 
             
+        # 2. VISÃO DA LIDERANÇA / TÉCNICO
+        else:
+            # MONITORIA e CONTESTAÇÃO: Apenas Admin, Gerência e Auditor
+            if nivel in ["ADMIN", "GERENCIA", "AUDITOR"]:
+                menu("📝 NOVA MONITORIA", "MONITORIA")
+                menu("⚖️ CONTESTAÇÕES", "CONTESTACAO")
+            
+            # HISTÓRICO GERAL: Todos os níveis de liderança vêm
+            menu("📚 HISTÓRICO GERAL", "HISTORICO")
+            
+            # RELATÓRIOS: Admin, Gerência e Auditor e Gestão
+            if nivel in ["ADMIN", "GERENCIA", "AUDITOR", "GESTAO"]:
+                menu("📋 RELATÓRIOS", "RELATORIOS")
+            
+            # MATRIZ DE DECISÃO (PDI): Apenas Admin, Gerência e Gestão
+            if nivel in ["ADMIN", "GERENCIA", "GESTAO"]:
+                menu("🎯 MATRIZ DE DECISÃO", "PDI") 
+            
+            # CONFIGURAÇÃO DE CRITÉRIOS: Apenas Admin e Auditor
             if nivel in ["ADMIN", "AUDITOR"]:
                 menu("⚙️ CONFIG. CRITÉRIOS", "CONFIG_CRITERIOS")
             
-            if nivel in ["ADMIN", "GESTAO", "GERENCIA"]:
+            # GESTÃO DE USUÁRIOS: Admin e Gerência
+            if nivel in ["ADMIN", "GERENCIA"]:
                 menu("👤 CADASTRAR USUÁRIO", "CADASTRO")
                 menu("👥 GESTÃO DE EQUIPE", "GESTAO_USUARIOS")
+                
+            # AUDITORIA DO SISTEMA: Exclusivo Admin
             if nivel == "ADMIN":
                 st.markdown("---")
                 menu("🕵️ AUDITORIA", "AUDITORIA")
@@ -317,7 +355,6 @@ def main():
     page = st.session_state.current_page
     try:
         if page == "DASHBOARD": render_dashboard()
-        # 👇 E O RENDER DO PERFIL FOI AJUSTADO AQUI TAMBÉM 👇
         elif page == "PERFIL": render_meu_perfil()
         elif page == "CONTESTACAO": render_contestacao()
         elif page == "MEUS_RESULTADOS": render_meus_resultados()

@@ -22,10 +22,20 @@ def render_usuario_gestao():
         return
 
     # ==========================================================
+    # 🛡️ TRAVA DE SEGURANÇA: OCULTAR ADMIN MESTRE
+    # ==========================================================
+    if nivel_logado != "ADMIN":
+        # Remove a conta mestre da lista para qualquer um que não seja ADMIN
+        if 'email' in df_users.columns:
+            df_users = df_users[df_users['email'] != 'admin@grupoacelerador.com.br'].copy()
+        elif 'nome' in df_users.columns:
+            df_users = df_users[df_users['nome'] != 'admin@grupoacelerador.com.br'].copy() # Caso não tenha email na view, corta pelo nome se for igual
+
+    # ==========================================================
     # FILTRO DE VISIBILIDADE (Quem o gestor pode editar?)
     # ==========================================================
     if nivel_logado in ["ADMIN", "GERENCIA"]:
-        df_filtrado = df_users.copy() # Admin e Gerência veem todos
+        df_filtrado = df_users.copy() # Admin e Gerência veem todos (já sem o admin mestre se for gerência)
     else:
         # Gestão comum vê apenas o seu departamento
         df_filtrado = df_users[df_users['departamento'].str.upper() == dept_logado.upper()].copy()
