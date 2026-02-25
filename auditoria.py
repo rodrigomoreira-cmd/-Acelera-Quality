@@ -1,8 +1,6 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-
-# IMPORTAÇÃO CORRETA: Usando a função com cache
 from database import get_all_records_db
 
 def render_auditoria():
@@ -24,14 +22,28 @@ def render_auditoria():
         df = get_all_records_db("auditoria")
         
         if df is not None and not df.empty:
-            # Tratamento de Data (Prioriza data_evento, fall back para criado_em)
+            # Tratamento de Data Seguro
             coluna_data = 'data_evento' if 'data_evento' in df.columns else 'criado_em'
             
-            # Converte para datetime para ordenar corretamente
-            df[coluna_data] = pd.to_datetime(df[coluna_data])
+            # CORREÇÃO: Blindagem contra erros de conversão de data
+            df[coluna_data] = pd.to_datetime(df[coluna_data], errors='coerce')
+            
+            # Remove linhas onde a data falhou na conversão para evitar erro no .dt
+            df = df.dropna(subset=[coluna_data])
+            
+            # ==========================================================
+            # 🛡️ TRAVA DE SEGURANÇA: OCULTAR ADMIN MESTRE
+            # ==========================================================
+            # Filtra logs para não exibir ações que envolvam o e-mail master
+            df = df[
+                (~df['admin_responsavel'].astype(str).str.contains('admin@grupoacelerador.com.br', na=False, case=False)) &
+                (~df['colaborador_afetado'].astype(str).str.contains('admin@grupoacelerador.com.br', na=False, case=False))
+            ].copy()
+
+            # Ordenação decrescente (mais recente primeiro)
             df = df.sort_values(by=coluna_data, ascending=False)
             
-            # Cria coluna formatada para exibição (BR)
+            # Cria coluna formatada para exibição (BR) com proteção
             df['Data_Formatada'] = df[coluna_data].dt.strftime('%d/%m/%Y %H:%M:%S')
 
             # 4. Filtros Dinâmicos
@@ -47,7 +59,6 @@ def render_auditoria():
                 acao_sel = c2.selectbox("Tipo de Ação:", acoes)
                 
                 # Filtro: Quem sofreu a ação?
-                # Tratamento para remover valores nulos/None antes de ordenar
                 lista_afetados = df['colaborador_afetado'].dropna().astype(str).unique().tolist()
                 afetados = ["Todos"] + sorted(lista_afetados)
                 afetado_sel = c3.selectbox("Colaborador Alvo:", afetados)
@@ -86,12 +97,13 @@ def render_auditoria():
             )
 
             # 7. Exportação CSV
-            csv = df_view.to_csv(index=False).encode('utf-8')
+            csv = df_view.to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8-sig')
             st.download_button(
-                label="📥 Baixar Relatório (CSV)",
+                label="📥 Baixar Logs de Auditoria (CSV)",
                 data=csv,
                 file_name=f'auditoria_log_{datetime.now().strftime("%Y%m%d_%H%M")}.csv',
-                mime='text/csv'
+                mime='text/csv',
+                use_container_width=True
             )
 
         else:

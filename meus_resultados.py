@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -14,29 +13,45 @@ def render_meus_resultados():
     df = get_all_records_db("monitorias")
 
     if df is not None and not df.empty:
-        # Tratamento inicial dos dados
+        # Tratamento inicial dos dados com BLINDAGEM de erro
         df['sdr_fmt'] = df['sdr'].astype(str).str.strip()
-        df['nota'] = pd.to_numeric(df['nota'], errors='coerce')
-        df['criado_em'] = pd.to_datetime(df['criado_em'])
+        df['nota'] = pd.to_numeric(df['nota'], errors='coerce').fillna(0)
         
+        # CORREÇÃO: Força conversão segura de data e remove as nulas
+        df['criado_em'] = pd.to_datetime(df['criado_em'], errors='coerce')
+        df = df.dropna(subset=['criado_em'])
+        
+        # ==========================================================
+        # 🛡️ TRAVA DE SEGURANÇA: OCULTAR ADMIN MESTRE
+        # ==========================================================
+        if nivel != "ADMIN":
+            df = df[
+                (~df['sdr'].str.contains('admin@grupoacelerador.com.br', na=False, case=False)) & 
+                (~df['monitor_responsavel'].str.contains('admin@grupoacelerador.com.br', na=False, case=False))
+            ].copy()
+
         # --- LÓGICA DO ADMIN VS SDR ---
         if nivel == "ADMIN":
             st.title("🔎 Análise Individual de Performance")
             st.markdown("Selecione um colaborador para ver a evolução detalhada dele.")
             
-            # Lista única de SDRs ordenada
-            lista_sdrs = sorted(df['sdr_fmt'].unique().tolist())
+            # Lista única de SDRs ordenada e SEM o Admin
+            lista_sdrs = sorted([nome for nome in df['sdr_fmt'].unique().tolist() if 'admin' not in str(nome).lower()])
             
             # Caixa de seleção para o Admin
-            sdr_alvo = st.selectbox("👤 Selecione o SDR:", lista_sdrs)
+            sdr_alvo = st.selectbox("👤 Selecione o SDR:", lista_sdrs) if lista_sdrs else None
+            
+            if not sdr_alvo:
+                st.warning("Nenhum SDR disponível para análise.")
+                return
         else:
             # SDR vê apenas os próprios dados
-            st.title(f"📈 Meus Resultados")
+            st.title("📈 Meus Resultados")
             st.markdown("Acompanhe sua evolução detalhada de qualidade.")
             sdr_alvo = usuario_logado
 
         # --- FILTRAGEM DOS DADOS ---
-        # Filtra o dataframe pelo SDR alvo (seja o escolhido pelo Admin ou o próprio SDR)
+        # Filtra o dataframe pelo SDR alvo
         meus_dados = df[df['sdr_fmt'].str.upper() == str(sdr_alvo).upper()].copy()
         meus_dados = meus_dados.sort_values(by='criado_em')
 
@@ -90,7 +105,10 @@ def render_meus_resultados():
         
         with c_chart:
             ultima_nota = meus_dados.iloc[-1]['nota']
-            data_ultima = meus_dados.iloc[-1]['criado_em'].strftime('%d/%m/%Y')
+            
+            # CORREÇÃO: Verifica se a data existe antes de formatar
+            data_raw = meus_dados.iloc[-1]['criado_em']
+            data_ultima = data_raw.strftime('%d/%m/%Y') if pd.notna(data_raw) else "Data N/D"
             
             fig_gauge = go.Figure(go.Indicator(
                 mode = "gauge+number",
@@ -124,7 +142,10 @@ def render_meus_resultados():
         for index, row in df_feed.iterrows():
             with st.container(border=True):
                 col_data, col_nota = st.columns([4, 1])
-                data_fmt = row['criado_em'].strftime('%d/%m/%Y')
+                
+                # CORREÇÃO: Blindagem de data na lista de feedbacks
+                data_row = row['criado_em']
+                data_fmt = data_row.strftime('%d/%m/%Y') if pd.notna(data_row) else "N/D"
                 
                 col_data.markdown(f"📅 **Data:** {data_fmt}")
                 cor_nota = "green" if row['nota'] >= 90 else "orange" if row['nota'] >= 70 else "red"

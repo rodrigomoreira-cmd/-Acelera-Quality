@@ -1,10 +1,11 @@
 import streamlit as st
 import hashlib
-from database import supabase, registrar_auditoria
+import time
+from database import supabase, registrar_auditoria, get_all_records_db
 
 def hash_password(password):
     """Transforma a senha em SHA-256 para manter o padrão do login."""
-    return hashlib.sha256(str.encode(password)).hexdigest()
+    return hashlib.sha256(str.encode(password.strip())).hexdigest()
 
 def render_cadastro():
     st.title("👥 Cadastro de Novo Usuário")
@@ -15,6 +16,7 @@ def render_cadastro():
     
     st.markdown("O e-mail será gerado automaticamente com o domínio **@grupoacelerador.com.br**.")
 
+    # clear_on_submit=True limpa os campos após o sucesso, facilitando cadastros em massa
     with st.form("form_cadastro_final", clear_on_submit=True):
         col1, col2 = st.columns(2)
         nome_completo = col1.text_input("Nome Completo", placeholder="Ex: João Silva")
@@ -42,20 +44,18 @@ def render_cadastro():
         opcoes_departamento = ["SDR", "Especialista", "Venda de Ingresso", "Auditor"]
         departamento = col6.selectbox("Departamento da Equipe", options=opcoes_departamento, index=0)
 
-        # --- NOVO: BUSCA OS GESTORES ATIVOS NO BANCO ---
+        # --- BUSCA OS GESTORES ATIVOS NO BANCO (Protegida) ---
         st.divider()
         st.markdown("#### 🎯 Alocação de Equipe")
         
-        # Se for um usuário comum, precisamos dizer quem é o chefe dele
         if nivel_acesso == "USUARIO":
             try:
-                # Busca quem tem nível GESTAO
-                res_gestores = supabase.table("usuarios").select("nome").eq("nivel", "GESTAO").execute()
+                # Busca quem tem nível GESTAO e ignora o admin mestre por segurança
+                res_gestores = supabase.table("usuarios").select("nome").eq("nivel", "GESTAO").neq("user", "admin@grupoacelerador.com.br").execute()
                 lista_gestores = ["Sem Gestor"] + [g['nome'] for g in res_gestores.data]
             except Exception:
                 lista_gestores = ["Sem Gestor"]
                 
-            # Se for um gestor criando a conta, já fixa o nome dele
             if nivel_logado == "GESTAO":
                 gestor_escolhido = st.selectbox("Gestor Responsável", [admin_logado])
             else:
@@ -66,13 +66,19 @@ def render_cadastro():
 
         st.divider()
         
-        if st.form_submit_button("🚀 Finalizar Cadastro", type="primary"):
+        # Botão de submissão
+        btn_submit = st.form_submit_button("🚀 Finalizar Cadastro", type="primary", use_container_width=True)
+        
+        if btn_submit:
             if not nome_completo or not user_prefix or not senha_pura:
                 st.error("⚠️ Preencha os campos obrigatórios (Nome, Usuário e Senha).")
+            elif len(senha_pura.strip()) < 4:
+                st.error("⚠️ A senha deve ter no mínimo 4 caracteres.")
             else:
                 try:
                     email_completo = f"{user_prefix.strip().lower()}@grupoacelerador.com.br"
                     
+                    # Verifica duplicidade
                     check = supabase.table("usuarios").select("user").eq("user", email_completo).execute()
                     
                     if check.data:
@@ -94,6 +100,9 @@ def render_cadastro():
                         
                         supabase.table("usuarios").insert(payload).execute()
 
+                        # Limpa o cache para o novo usuário aparecer nas listagens imediatamente
+                        get_all_records_db.clear()
+
                         registrar_auditoria(
                             acao="CADASTRO DE USUÁRIO",
                             colaborador_afetado=nome_completo.strip(),
@@ -102,6 +111,8 @@ def render_cadastro():
                         
                         st.success(f"✅ {nome_completo.strip()} cadastrado com sucesso!")
                         st.balloons()
+                        time.sleep(1)
+                        st.rerun()
                         
                 except Exception as e:
                     st.error(f"❌ Ocorreu um erro ao cadastrar: {e}")

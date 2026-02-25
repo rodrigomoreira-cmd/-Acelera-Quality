@@ -74,38 +74,24 @@ def salvar_monitoria_auditada(dados):
         return False, str(e)
 
 # ==========================================================
-# 🔔 SISTEMA DE NOTIFICAÇÕES (ATUALIZADO PARA PDI)
+# 🔔 SISTEMA DE NOTIFICAÇÕES (UNIFICADO)
 # ==========================================================
 def buscar_contagem_notificacoes(nome_usuario, nivel):
     if not nome_usuario or nome_usuario == "Usuário": return 0
     try:
-        # Busca notificações gerais não lidas (nova tabela)
+        # Busca EXCLUSIVAMENTE notificações da tabela central unificada
         res_notif = supabase.table("notificacoes").select("id", count="exact").eq("usuario", nome_usuario).eq("lida", False).execute()
-        qtd_notif_gerais = res_notif.count if res_notif.count else 0
-
-        if nivel not in ["ADMIN", "GESTAO", "AUDITOR", "GERENCIA"]:
-            # Conta monitorias e contestações antigas do SDR
-            res_mon = supabase.table("monitorias").select("id", count="exact").eq("sdr", nome_usuario).eq("visualizada", False).execute()
-            res_cont = supabase.table("contestacoes").select("id", count="exact").eq("sdr_nome", nome_usuario).neq("status", "Pendente").eq("visualizada", False).execute()
-            
-            qtd_mon = res_mon.count if res_mon.count else 0
-            qtd_cont = res_cont.count if res_cont.count else 0
-            
-            return qtd_mon + qtd_cont + qtd_notif_gerais
-        else:
-            # Conta pendências da liderança + notificações próprias
-            res = supabase.table("contestacoes").select("id", count="exact").eq("status", "Pendente").execute()
-            qtd_pendentes = res.count if res.count else 0
-            
-            return qtd_pendentes + qtd_notif_gerais
-    except: return 0
+        return res_notif.count if res_notif.count else 0
+    except: 
+        return 0
 
 def limpar_todas_notificacoes(nome_usuario):
     try:
-        # Limpa as antigas
+        # Limpa as antigas (para retrocompatibilidade)
         supabase.table("monitorias").update({"visualizada": True}).eq("sdr", nome_usuario).execute()
         supabase.table("contestacoes").update({"visualizada": True}).eq("sdr_nome", nome_usuario).neq("status", "Pendente").execute()
-        # Limpa as novas da tabela de notificações (PDI, etc)
+        
+        # Limpa a tabela principal nova
         supabase.table("notificacoes").update({"lida": True}).eq("usuario", nome_usuario).execute()
         
         get_all_records_db.clear()

@@ -27,17 +27,18 @@ def render_relatorios():
     # Oculta o Admin Mestre para não-admins
     if nivel != "ADMIN":
         df_mon = df_mon[
-            (df_mon['sdr'] != 'admin@grupoacelerador.com.br') & 
-            (df_mon['monitor_responsavel'] != 'admin@grupoacelerador.com.br')
-        ]
+            (~df_mon['sdr'].str.contains('admin@grupoacelerador.com.br', na=False, case=False)) & 
+            (~df_mon['monitor_responsavel'].str.contains('admin@grupoacelerador.com.br', na=False, case=False))
+        ].copy()
+        
         if df_comp is not None and not df_comp.empty:
-            df_comp = df_comp[df_comp['sdr_nome'] != 'admin@grupoacelerador.com.br']
+            df_comp = df_comp[~df_comp['sdr_nome'].str.contains('admin@grupoacelerador.com.br', na=False, case=False)].copy()
 
     # Filtra pelo Departamento selecionado na barra lateral
     if dept_logado != "Todos" and 'departamento' in df_mon.columns:
-        df_mon = df_mon[df_mon['departamento'].str.upper() == dept_logado.upper()]
+        df_mon = df_mon[df_mon['departamento'].astype(str).str.upper() == dept_logado.upper()].copy()
         if df_comp is not None and not df_comp.empty and 'departamento' in df_comp.columns:
-            df_comp = df_comp[df_comp['departamento'].str.upper() == dept_logado.upper()]
+            df_comp = df_comp[df_comp['departamento'].astype(str).str.upper() == dept_logado.upper()].copy()
 
     if df_mon.empty:
         st.info(f"Nenhum registro encontrado para o departamento: **{dept_logado}**.")
@@ -50,9 +51,11 @@ def render_relatorios():
         st.markdown("#### 🔍 Filtros de Análise")
         col_f1, col_f2 = st.columns(2)
         
-        # Filtro 1: Seleção de SDR
+        # Filtro 1: Seleção de SDR (Segura e sem admin mestre)
         with col_f1:
             lista_sdrs = sorted(list(df_mon['sdr'].dropna().unique()))
+            # Remove o admin da lista de exibição se ele ainda estiver lá
+            lista_sdrs = [nome for nome in lista_sdrs if 'admin' not in str(nome).lower()]
             sdr_selecionado = st.selectbox("👤 Filtrar por Colaborador:", ["Todos da Equipe"] + lista_sdrs)
 
         # Filtro 2: Seleção de Data
@@ -64,7 +67,9 @@ def render_relatorios():
     # =========================================================
     # ⚙️ APLICAÇÃO DOS FILTROS
     # =========================================================
-    df_mon['criado_em'] = pd.to_datetime(df_mon['criado_em'])
+    # CORREÇÃO: Conversão segura de datas e remoção de valores inválidos (NaT)
+    df_mon['criado_em'] = pd.to_datetime(df_mon['criado_em'], errors='coerce')
+    df_mon = df_mon.dropna(subset=['criado_em']).copy()
     df_mon['data_filtro'] = df_mon['criado_em'].dt.date
     
     # 1. Filtra SDR
@@ -93,6 +98,7 @@ def render_relatorios():
     # =========================================================
     # 📈 KPIs EXECUTIVOS (CARDS)
     # =========================================================
+    df_mon['nota'] = pd.to_numeric(df_mon['nota'], errors='coerce').fillna(0)
     qtd_monitorias = len(df_mon)
     media_qa = df_mon['nota'].mean()
 
@@ -158,6 +164,9 @@ def render_relatorios():
             'resposta_admin': 'Resposta Gestão',
             'status': 'Status Contestação'
         })
+        # Força o tipo para evitar erro no merge
+        df_mon['id'] = df_mon['id'].astype(str)
+        df_cont_resumo['monitoria_id'] = df_cont_resumo['monitoria_id'].astype(str)
         df_final = pd.merge(df_mon, df_cont_resumo, left_on='id', right_on='monitoria_id', how='left')
     else:
         df_final = df_mon.copy()
@@ -165,16 +174,19 @@ def render_relatorios():
         df_final['Resposta Gestão'] = "-"
         df_final['Status Contestação'] = "-"
 
-    # Função para extrair apenas NC e NCG
+    # Função para extrair apenas NC e NCG com segurança de tipo
     def processar_erros(detalhes):
         if not detalhes or not isinstance(detalhes, dict): return ""
-        erros = [f"{k} ({v})" for k, v in detalhes.items() if v in ["NC", "NCG", "NC Grave"]]
-        return " | ".join(erros) if erros else ""
+        try:
+            erros = [f"{k} ({v.get('nota', v) if isinstance(v, dict) else v})" for k, v in detalhes.items() if (isinstance(v, dict) and v.get('nota') in ["NC", "NCG", "NC Grave"]) or (isinstance(v, str) and v in ["NC", "NCG", "NC Grave"])]
+            return " | ".join(erros) if erros else ""
+        except:
+            return ""
 
     try:
         df_final['Detalhes (Erros)'] = df_final['detalhes'].apply(processar_erros)
-        df_final['Data Monitoria'] = df_final['criado_em'].dt.strftime('%d/%m/%Y %H:%M')
-        df_final['Contestado'] = df_final['contestada'].apply(lambda x: "Sim" if x else "Não")
+        df_final['Data Monitoria'] = df_final['criado_em'].dt.strftime('%d/%m/%Y %H:%M').fillna("-")
+        df_final['Contestado'] = df_final.get('contestada', False).apply(lambda x: "Sim" if x else "Não")
         
         cols_fillna = ['Motivo Contestação', 'Resposta Gestão', 'Status Contestação']
         for c in cols_fillna: 

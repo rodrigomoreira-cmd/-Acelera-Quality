@@ -22,20 +22,19 @@ def render_usuario_gestao():
         return
 
     # ==========================================================
-    # 🛡️ TRAVA DE SEGURANÇA: OCULTAR ADMIN MESTRE
+    # 🛡️ TRAVA DE SEGURANÇA: OCULTAR ADMIN MESTRE SEMPRE
     # ==========================================================
-    if nivel_logado != "ADMIN":
-        # Remove a conta mestre da lista para qualquer um que não seja ADMIN
-        if 'email' in df_users.columns:
-            df_users = df_users[df_users['email'] != 'admin@grupoacelerador.com.br'].copy()
-        elif 'nome' in df_users.columns:
-            df_users = df_users[df_users['nome'] != 'admin@grupoacelerador.com.br'].copy() # Caso não tenha email na view, corta pelo nome se for igual
+    # CORREÇÃO: O admin mestre NUNCA deve aparecer, nem para ele mesmo, para evitar exclusão acidental.
+    df_users = df_users[
+        (~df_users['email'].astype(str).str.contains('admin@grupoacelerador.com.br', na=False, case=False)) &
+        (~df_users['nome'].astype(str).str.contains('admin@grupoacelerador.com.br', na=False, case=False))
+    ].copy()
 
     # ==========================================================
     # FILTRO DE VISIBILIDADE (Quem o gestor pode editar?)
     # ==========================================================
     if nivel_logado in ["ADMIN", "GERENCIA"]:
-        df_filtrado = df_users.copy() # Admin e Gerência veem todos (já sem o admin mestre se for gerência)
+        df_filtrado = df_users.copy() 
     else:
         # Gestão comum vê apenas o seu departamento
         df_filtrado = df_users[df_users['departamento'].str.upper() == dept_logado.upper()].copy()
@@ -74,7 +73,7 @@ def render_usuario_gestao():
         status_texto = "" if row.get('ativo', True) else " (Inativo)"
         label = f"{status_icone} {row['nome']}{status_texto}"
         opcoes_formatadas.append(label)
-        mapa_usuarios[label] = row['id'] # Guarda o ID real para podermos buscar os dados
+        mapa_usuarios[label] = row['id'] 
 
     escolha = st.selectbox("Busque e selecione o colaborador:", [""] + opcoes_formatadas)
 
@@ -122,7 +121,10 @@ def render_usuario_gestao():
                     status_atual = user_data.get('ativo', True)
                     novo_status = st.toggle("Conta Ativa", value=bool(status_atual), help="Desligue para bloquear o login deste usuário sem apagar seu histórico.")
 
-                    if st.form_submit_button("💾 Salvar Alterações", type="primary", use_container_width=True):
+                    # Botão de envio
+                    btn_save = st.form_submit_button("💾 Salvar Alterações", type="primary", use_container_width=True)
+
+                    if btn_save:
                         payload = {
                             "nome": novo_nome,
                             "email": novo_email,
