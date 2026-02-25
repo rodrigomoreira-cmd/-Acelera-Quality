@@ -29,12 +29,9 @@ def render_contestacao():
     # Padroniza a data de criação com o Fuso Horário de Brasília
     fuso = pytz.timezone('America/Sao_Paulo')
     if 'criado_em' in df_monitorias.columns:
-        # CORREÇÃO: Força a conversão para datetime (Ignora erros e transforma em NaT)
         df_monitorias['criado_em'] = pd.to_datetime(df_monitorias['criado_em'], errors='coerce')
         
-        # Garante que a coluna não esteja 100% vazia antes de aplicar os fusos
         if not df_monitorias['criado_em'].isna().all():
-            # Converte para o fuso correto dependendo de como vem do banco (UTC ou não)
             if df_monitorias['criado_em'].dt.tz is None:
                 df_monitorias['criado_em'] = df_monitorias['criado_em'].dt.tz_localize('UTC').dt.tz_convert(fuso)
             else:
@@ -50,7 +47,6 @@ def render_contestacao():
     if nivel not in ["AUDITOR", "GESTAO", "ADMIN", "GERENCIA"]:
         st.markdown("Aqui você pode solicitar a revisão de uma nota caso discorde da avaliação recebida.")
         
-        # --- AVISO DA REGRA DE 3 DIAS ---
         st.info("⏱️ **Regra de SLA:** Você possui até **3 dias corridos** após a data da avaliação para abrir uma contestação. Após este prazo, a nota é considerada validada.")
         st.divider()
 
@@ -62,7 +58,6 @@ def render_contestacao():
             st.success("Você ainda não possui monitorias registradas.")
             return
 
-        # CORREÇÃO: Calcula quantos dias se passaram sem conflito de tipo (Date vs Datetime)
         hoje = datetime.now(fuso)
         minhas_monitorias['dias_passados'] = (hoje - minhas_monitorias['criado_em']).dt.days
 
@@ -74,7 +69,6 @@ def render_contestacao():
                     df_contestacoes[coluna_nome].astype(str).str.strip().str.upper() == nome_completo.strip().upper()
                 ]['monitoria_id'].tolist()
 
-        # Filtra apenas as que não foram contestadas E que estão dentro do prazo de 3 dias
         disponiveis = minhas_monitorias[
             (~minhas_monitorias['id'].isin(seus_ids_contestados)) & 
             (minhas_monitorias['dias_passados'] <= 3)
@@ -89,13 +83,11 @@ def render_contestacao():
             if disponiveis.empty:
                 st.warning("🔒 Nenhuma avaliação disponível. Você já contestou as monitorias recentes ou elas passaram do prazo de 3 dias.")
             else:
-                # Monta as opções mostrando quantos dias faltam para expirar
                 opcoes_mon = {}
                 for _, row in disponiveis.iterrows():
                     dias_restantes = 3 - row['dias_passados']
                     aviso_dias = "⏳ Último dia!" if dias_restantes <= 0 else f"⏳ {dias_restantes} dia(s) restante(s)"
                     
-                    # Evita erro na formatação da data se estiver vazia
                     dt_format = row['criado_em'].strftime('%d/%m/%Y') if pd.notna(row['criado_em']) else "Data N/D"
                     label = f"📅 {dt_format} | Nota: {row['nota']}% | Auditor: {row['monitor_responsavel']} ({aviso_dias})"
                     opcoes_mon[label] = row['id']
@@ -180,7 +172,16 @@ def render_contestacao():
                                     supabase.table("contestacoes").insert(payload).execute()
                                     registrar_auditoria("ABERTURA DE CONTESTAÇÃO", f"Abriu contestação para a avaliação de {auditor_nome}.", nome_completo)
                                     
-                                    st.success("✅ Contestação enviada para a equipa de qualidade!")
+                                    # 🔔 GATILHO: AVISA O AUDITOR QUE ELE FOI CONTESTADO
+                                    try:
+                                        supabase.table("notificacoes").insert({
+                                            "usuario": auditor_nome, 
+                                            "mensagem": f"⚖️ {nome_completo} abriu uma contestação referente à sua avaliação. Verifique a Central de Contestações.", 
+                                            "lida": False
+                                        }).execute()
+                                    except: pass
+
+                                    st.success("✅ Contestação enviada para a equipe de qualidade!")
                                     time.sleep(1.5)
                                     get_all_records_db.clear()
                                     st.rerun()
@@ -195,7 +196,6 @@ def render_contestacao():
                 minhas_cont = df_contestacoes[df_contestacoes[coluna_filtro].astype(str).str.strip().str.upper() == nome_completo.strip().upper()].copy()
                 
                 if not minhas_cont.empty:
-                    # CORREÇÃO: Força datetime e formata para string sem gerar o erro dt
                     if 'criado_em' in minhas_cont.columns:
                         minhas_cont['criado_em'] = pd.to_datetime(minhas_cont['criado_em'], errors='coerce')
                         minhas_cont['Data'] = minhas_cont['criado_em'].dt.strftime('%d/%m/%Y').fillna("-")
@@ -256,7 +256,7 @@ def render_contestacao():
                     nota_limpa = int(float(str(row['nota']))) if pd.notna(row.get('nota')) else 0
                     auditor_original = row.get('monitor_responsavel', 'Desconhecido')
 
-                    # BUSCA BLINDADA DO NOME DO COLABORADOR E DATA
+                    # BUSCA BLINDADA DO NOME DO COLABORADOR
                     nome_colaborador = "Desconhecido"
                     for campo in ['sdr_y', 'sdr_x', 'sdr', 'sdr_nome']:
                         if campo in row.index and pd.notna(row[campo]) and str(row[campo]).strip().lower() != "none":
@@ -307,15 +307,26 @@ def render_contestacao():
                                     registrar_auditoria("JULGAMENTO DE CONTESTAÇÃO", f"A contestação de {nome_colaborador} foi julgada como '{decisao}'.", nome_colaborador)
 
                                     # ==========================================================
-                                    # 🔔 GATILHO DE MEDALHA: ADVOGADO DE DEFESA
+                                    # 🔔 GATILHOS DE COMUNICAÇÃO (AVISA O SDR)
                                     # ==========================================================
-                                    if decisao == "Aceita":
-                                        msg_advogado = "⚖️ PARABÉNS! Sua contestação foi aceita. Você provou seu ponto e desbloqueou a medalha Advogado de Defesa!"
+                                    try:
+                                        # 1. Avisa o SDR que houve um resultado (Independente de Aceita/Recusada)
                                         supabase.table("notificacoes").insert({
                                             "usuario": nome_colaborador,
-                                            "mensagem": msg_advogado,
+                                            "mensagem": f"⚖️ Sua contestação foi avaliada como: {decisao}. Acesse a Central de Contestações para ler o feedback.",
                                             "lida": False
                                         }).execute()
+
+                                        # 2. Gatilho de Gamificação (Medalha Advogado de Defesa)
+                                        if decisao == "Aceita":
+                                            msg_advogado = "🎖️ PARABÉNS! Sua contestação foi aceita. Você provou seu ponto e desbloqueou a medalha Advogado de Defesa!"
+                                            supabase.table("notificacoes").insert({
+                                                "usuario": nome_colaborador,
+                                                "mensagem": msg_advogado,
+                                                "lida": False
+                                            }).execute()
+                                    except Exception as e:
+                                        print(f"Erro silencioso de notificação: {e}")
                                     
                                     st.success("Julgamento registrado e auditado!")
                                     get_all_records_db.clear()
@@ -328,7 +339,6 @@ def render_contestacao():
                 if not julgadas.empty:
                     col_exib = 'sdr_y' if 'sdr_y' in julgadas.columns else ('sdr_x' if 'sdr_x' in julgadas.columns else ('sdr' if 'sdr' in julgadas.columns else 'sdr_nome'))
                     
-                    # CORREÇÃO: Força conversão e formatação segura sem falhas
                     if 'criado_em_x' in julgadas.columns:
                         julgadas['criado_em_x'] = pd.to_datetime(julgadas['criado_em_x'], errors='coerce')
                         julgadas['Data_Vis'] = julgadas['criado_em_x'].dt.strftime('%d/%m/%Y').fillna("-")
