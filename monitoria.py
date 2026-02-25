@@ -24,11 +24,8 @@ def render_nova_monitoria():
         st.error(f"Erro de conexão com o banco: {e}")
         return
 
-    # ==========================================================
-    # 🛡️ TRAVA DE SEGURANÇA: OCULTAR ADMIN MESTRE (REVISADO)
-    # ==========================================================
+    # 🛡️ TRAVA DE SEGURANÇA: OCULTAR ADMIN MESTRE
     if not df_users.empty:
-        # Oculta o admin master de todas as listagens de monitoria, independente de quem logou
         df_users = df_users[
             (~df_users['email'].astype(str).str.contains('admin@grupoacelerador.com.br', na=False, case=False)) &
             (~df_users['nome'].astype(str).str.contains('admin@grupoacelerador.com.br', na=False, case=False))
@@ -102,7 +99,8 @@ def render_nova_monitoria():
                     
                     respostas[nome_c] = {
                         "valor": v_res, "peso": peso_c, "eh_fatal": eh_fatal,
-                        "comentario": v_com, "arquivo": v_img
+                        "comentario": v_com, "arquivo": v_img,
+                        "nome_original": v_img.name if v_img else None # Guarda nome original
                     }
                     st.divider()
 
@@ -116,6 +114,7 @@ def render_nova_monitoria():
                 fatal_detectado = False
                 detalhes_finais = {}
                 erro_upload = False
+                pelo_menos_uma_foto = False # Flag para o consolidado
 
                 for nome, item in respostas.items():
                     res = item["valor"]
@@ -130,15 +129,14 @@ def render_nova_monitoria():
                             nome_bucket = f"prova_{uuid.uuid4().hex[:10]}.{ext}"
                             supabase.storage.from_("evidencias").upload(path=nome_bucket, file=f.getvalue(), file_options={"content-type": f.type})
                             
-                            # --- CORREÇÃO DO ERRO 'STR' OBJECT ---
                             res_url = supabase.storage.from_("evidencias").get_public_url(nome_bucket)
-                            # Verifica se res_url é uma string ou objeto
                             if isinstance(res_url, str):
                                 url_publica = res_url
                             else:
                                 url_publica = getattr(res_url, 'public_url', str(res_url))
-                            # -------------------------------------
                             
+                            pelo_menos_uma_foto = True # Ativa a visualização no histórico
+
                         except Exception as e:
                             st.error(f"🛑 Erro no upload: {e}")
                             erro_upload = True
@@ -152,9 +150,15 @@ def render_nova_monitoria():
                     
                     if res == "NC Grave": fatal_detectado = True
 
+                    # ESTRUTURA DE DETALHES REVISADA PARA O HISTÓRICO
                     detalhes_finais[nome] = {
-                        "nota": res, "comentario": item["comentario"],
-                        "peso_applied": peso, "foi_fatal": fatal, "url_arquivo": url_publica
+                        "nota": res, 
+                        "comentario": item["comentario"],
+                        "peso_aplicado": peso, 
+                        "foi_fatal": fatal, 
+                        "url_arquivo": url_publica,
+                        "evidencia_anexada": True if url_publica else False, # CRUCIAL PARA APARECER NO HISTÓRICO
+                        "arquivo": item["nome_original"]
                     }
 
                 if erro_upload: st.stop()
@@ -169,7 +173,8 @@ def render_nova_monitoria():
                     "link_nectar": link_nectar,
                     "observacoes": observacoes,
                     "monitor_responsavel": st.session_state.get('user_nome', 'Sistema'),
-                    "detalhes": detalhes_finais
+                    "detalhes": detalhes_finais,
+                    "evidencia_anexada": pelo_menos_uma_foto # GATILHO PARA A COLUNA NO BANCO
                 }
 
                 sucesso, msg = salvar_monitoria_auditada(payload)
@@ -177,7 +182,7 @@ def render_nova_monitoria():
                 if sucesso:
                     st.success(f"✅ Monitoria salva! Nota: {payload['nota']}%")
                     
-                    # Notificações de Medalhas
+                    # Notificações
                     if payload['nota'] == 100:
                         supabase.table("notificacoes").insert({"usuario": sdr_escolhido, "mensagem": "🎯 Medalha Sniper Desbloqueada! Nota 100%.", "lida": False}).execute()
                     if not fatal_detectado and payload['nota'] > 0:
