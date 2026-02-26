@@ -58,7 +58,6 @@ def render_historico_geral(nivel, nome_completo):
 
     df_monitorias['id'] = df_monitorias['id'].astype(str).str.strip()
     
-    # CORREÇÃO: Tratamento de data seguro com errors='coerce'
     df_monitorias['criado_em'] = pd.to_datetime(df_monitorias['criado_em'], errors='coerce')
     df_monitorias = df_monitorias.dropna(subset=['criado_em']).sort_values(by='criado_em', ascending=False)
     
@@ -74,12 +73,8 @@ def render_historico_geral(nivel, nome_completo):
     if dept_selecionado != "Todos" and 'departamento' in df_exibicao.columns:
         df_exibicao = df_exibicao[df_exibicao['departamento'].astype(str).str.strip().str.upper() == dept_selecionado.strip().upper()].copy()
 
-    # Formatação de data após a blindagem
     df_exibicao['Data'] = df_exibicao['criado_em'].dt.strftime('%d/%m/%Y %H:%M').fillna("Data N/D")
     
-    # ==========================================================
-    # 🛡️ REGRA DE SEGURANÇA: OCULTAR ADMIN MESTRE
-    # ==========================================================
     if nivel != "ADMIN":
         df_exibicao = df_exibicao[
             (df_exibicao['sdr'] != 'admin@grupoacelerador.com.br') & 
@@ -145,7 +140,26 @@ def render_historico_geral(nivel, nome_completo):
                     url_img = info.get('url_arquivo')
                     nome_arq = info.get('arquivo', 'Anexo')
 
-                    if nota_c == "C": st.success(f"✅ **{pergunta}**")
+                    # CORREÇÃO: Mostrar evidência mesmo quando for Conforme (C)
+                    if nota_c == "C": 
+                        if tem_anexo or (coment and coment != 'Sem comentário.'):
+                            with st.expander(f"✅ {pergunta} (Conforme)", expanded=False):
+                                if coment and coment != 'Sem comentário.': st.write(f"**Comentário:** {coment}")
+                                if tem_anexo and url_img:
+                                    st.image(url_img, caption=f"Evidência Positiva: {nome_arq}", use_container_width=True)
+                                    col_link, col_btn = st.columns([3, 1])
+                                    col_link.markdown(f"🔗 [Abrir Imagem Original]({url_img})")
+                                    if nivel in ["ADMIN", "AUDITOR"]:
+                                        if col_btn.button("🗑️ Apagar Foto", key=f"del_img_{id_sel}_{pergunta}", help="Remove a imagem da nuvem"):
+                                            sucesso, msg = remover_evidencia_monitoria(id_sel, pergunta, url_img, nome_completo)
+                                            if sucesso:
+                                                st.success("✅ " + msg)
+                                                time.sleep(1)
+                                                st.rerun()
+                                            else: st.error("❌ " + msg)
+                        else:
+                            st.success(f"✅ **{pergunta}**")
+                            
                     elif nota_c in ["NC", "NGC", "NC Grave"]:
                         with st.expander(f"❌ {pergunta} (Penalidade: {nota_c})", expanded=True):
                             st.write(f"**Motivo:** {coment}")
@@ -173,7 +187,6 @@ def render_historico_geral(nivel, nome_completo):
 def main():
     st.set_page_config(layout="wide", page_title="Acelera Quality", page_icon="🚀")
     
-    # CSS: Força a sidebar a ficar visível e adiciona a animação do sininho (PULSE)
     st.markdown("""
     <style>
     section[data-testid='stSidebar'] { display: block !important; visibility: visible !important; }
@@ -223,9 +236,6 @@ def main():
         st.markdown(f"<div style='text-align: center; margin-top: 5px; margin-bottom: 15px;'><span style='background-color: #ff4b4b22; color: #ff4b4b; padding: 4px 15px; border-radius: 20px; font-size: 13px; font-weight: bold; border: 1px solid #ff4b4b44; text-transform: uppercase;'>{rotulo_perfil}</span></div>", unsafe_allow_html=True)
         st.divider()
         
-        # ==========================================================
-        # 🏢 TRAVA DE VISÃO POR DEPARTAMENTO
-        # ==========================================================
         st.markdown("**🏢 Visão por Departamento**")
         
         if nivel == "GESTAO":
@@ -242,10 +252,7 @@ def main():
         else:
             st.session_state.departamento_selecionado = meu_dept
 
-        # ==========================================================
-        # 🔔 SININHO MODERNO (PULSE + POPOVER)
-        # ==========================================================
-        st.write("") # Espaço extra
+        st.write("") 
         res_n = buscar_contagem_notificacoes(nome_completo, nivel)
         qtd = int(res_n if res_n else 0)
 
@@ -255,17 +262,24 @@ def main():
         else:
             st.markdown("🔕 Sem novas notificações")
 
-        # O Popover flutuante
         with st.popover("📬 Abrir Caixa de Entrada", use_container_width=True):
             st.markdown("### Suas Mensagens")
-            try:
-                # Busca as mensagens do banco
-                res = supabase.table("notificacoes").select("*").eq("usuario", nome_completo).eq("lida", False).order("id", desc=True).execute()
-                notifs = res.data if res.data else []
-                
+            
+            notifs = []
+            sucesso_busca = False
+            
+            for _ in range(3):
+                try:
+                    res = supabase.table("notificacoes").select("*").eq("usuario", nome_completo).eq("lida", False).order("id", desc=True).execute()
+                    notifs = res.data if res.data else []
+                    sucesso_busca = True
+                    break 
+                except Exception:
+                    time.sleep(0.5) 
+
+            if sucesso_busca:
                 if notifs:
                     for notif in notifs:
-                        # Colore de verde se for uma medalha ou conquista
                         if "Medalha" in notif['mensagem'] or "PARABÉNS" in notif['mensagem'] or "Sniper" in notif['mensagem'] or "Muralha" in notif['mensagem']:
                             st.success(notif['mensagem'])
                         else:
@@ -277,15 +291,11 @@ def main():
                         st.rerun()
                 else:
                     st.caption("Você está em dia! Nenhuma novidade por aqui. 😎")
-                    
-            except Exception as e:
-                st.caption(f"Erro ao carregar mensagens: {e}")
+            else:
+                st.caption("A rede oscilou e não pudemos carregar as mensagens. Tente abrir novamente em instantes.")
                 
         st.divider()
 
-        # ==========================================================
-        # 🕹️ LÓGICA DE MENUS E HIERARQUIA
-        # ==========================================================
         def menu(label, target):
             def_btn_type = "primary" if st.session_state.current_page == target else "secondary"
             if st.button(label, use_container_width=True, type=def_btn_type):
@@ -294,14 +304,12 @@ def main():
 
         menu("📊 DASHBOARD", "DASHBOARD")
         
-        # 1. VISÃO DO SDR / ESPECIALISTA / VENDA DE INGRESSO
         if nivel not in ["ADMIN", "GESTAO", "AUDITOR", "GERENCIA"]:
             menu("⚖️ CONTESTAR NOTA", "CONTESTACAO")
             menu("📈 MEUS RESULTADOS", "MEUS_RESULTADOS")
             menu("📚 HISTÓRICO", "HISTORICO")
             menu("🎯 MEU PDI", "PDI")  
             
-        # 2. VISÃO DA LIDERANÇA / TÉCNICO
         else:
             if nivel in ["ADMIN", "GERENCIA", "AUDITOR"]:
                 menu("📝 NOVA MONITORIA", "MONITORIA")
