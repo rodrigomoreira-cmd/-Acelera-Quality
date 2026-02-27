@@ -125,34 +125,42 @@ def render_dashboard():
                 qtd_mon=('id', 'count')
             ).reset_index()
 
+            # 👇 REGRA DE CORTE (MERITOCRACIA)
+            MINIMO_MONITORIAS = 3  # <- Pode mudar esse número quando quiser!
+            ranking = ranking[ranking['qtd_mon'] >= MINIMO_MONITORIAS]
+
+            # --- CORREÇÃO DO RANKING (Qualidade em 1º Lugar) ---
             ranking = ranking.sort_values(
-                by=['qtd_mon', 'nota_media'], 
+                by=['nota_media', 'qtd_mon'], # Primeiro Nota, depois o Volume como desempate
                 ascending=[False, False]
             ).reset_index(drop=True)
             
-            col_rank = st.columns(3)
-            medalhas = ["🥇", "🥈", "🥉"]
-            cores = ["#FFD700", "#C0C0C0", "#CD7F32"]
+            if ranking.empty:
+                st.info(f"⏳ Aguardando mais avaliações... O pódio exige um mínimo de {MINIMO_MONITORIAS} monitorias por colaborador no período.")
+            else:
+                col_rank = st.columns(3)
+                medalhas = ["🥇", "🥈", "🥉"]
+                cores = ["#FFD700", "#C0C0C0", "#CD7F32"]
 
-            for i, row in ranking.head(3).iterrows():
-                try:
-                    res_user = supabase.table("usuarios").select("foto_url").eq("nome", row['sdr']).single().execute()
-                    foto_sdr = res_user.data.get('foto_url') if res_user.data else None
-                except:
-                    foto_sdr = None
-                
-                with col_rank[i]:
-                    foto_html = f'<img src="{foto_sdr}" style="width: 70px; height: 70px; border-radius: 50%; object-fit: cover; border: 3px solid {cores[i]};">' if foto_sdr else '<div style="font-size: 40px;">👤</div>'
+                for i, row in ranking.head(3).iterrows():
+                    try:
+                        res_user = supabase.table("usuarios").select("foto_url").eq("nome", row['sdr']).single().execute()
+                        foto_sdr = res_user.data.get('foto_url') if res_user.data else None
+                    except:
+                        foto_sdr = None
                     
-                    st.markdown(f"""
-                        <div style="background-color: {cores[i]}15; padding: 15px; border-radius: 15px; border: 2px solid {cores[i]}; text-align: center; min-height: 220px;">
-                            {foto_html}<br>
-                            <span style="font-size: 25px;">{medalhas[i]}</span><br>
-                            <b style="font-size: 14px;">{row['sdr']}</b><br>
-                            <h4 style="margin: 5px 0; color: #ccc; font-weight: normal;">{row['qtd_mon']} Monitorias</h4>
-                            <h2 style="color: {cores[i]}; margin:0;">{row['nota_media']:.1f}%</h2>
-                        </div>
-                    """, unsafe_allow_html=True)
+                    with col_rank[i]:
+                        foto_html = f'<img src="{foto_sdr}" style="width: 70px; height: 70px; border-radius: 50%; object-fit: cover; border: 3px solid {cores[i]};">' if foto_sdr else '<div style="font-size: 40px;">👤</div>'
+                        
+                        st.markdown(f"""
+                            <div style="background-color: {cores[i]}15; padding: 15px; border-radius: 15px; border: 2px solid {cores[i]}; text-align: center; min-height: 220px;">
+                                {foto_html}<br>
+                                <span style="font-size: 25px;">{medalhas[i]}</span><br>
+                                <b style="font-size: 14px;">{row['sdr']}</b><br>
+                                <h4 style="margin: 5px 0; color: #ccc; font-weight: normal;">{row['qtd_mon']} Monitorias</h4>
+                                <h2 style="color: {cores[i]}; margin:0;">{row['nota_media']:.1f}%</h2>
+                            </div>
+                        """, unsafe_allow_html=True)
             st.divider()
 
         # ----------------------------------------------------------

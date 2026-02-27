@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import time
 from datetime import datetime, timedelta
+import os # Importado para verificar a existência da logo
 
 from auth import render_login
 from dashboard import render_dashboard
@@ -185,7 +186,9 @@ def render_historico_geral(nivel, nome_completo):
                 modal_anular(id_sel, linha['sdr'])
 
 def main():
-    st.set_page_config(layout="wide", page_title="Acelera Quality", page_icon="🚀")
+    # --- NOVO: Tenta carregar o ícone (Favicon), se falhar usa o padrão ---
+    icon_path = "assets/icon.png" if os.path.exists("assets/logo.png") else "🚀"
+    st.set_page_config(layout="wide", page_title="Acelera Quality", page_icon=icon_path)
     
     st.markdown("""
     <style>
@@ -224,6 +227,17 @@ def main():
     meu_dept = st.session_state.get('departamento', nivel)
 
     with st.sidebar:
+        # ==========================================
+        # NOVO: LOGO DA EMPRESA AQUI
+        # ==========================================
+        if os.path.exists("assets/logo.png"):
+            st.image("assets/logo.png", use_container_width=True)
+        else:
+            # Fallback elegante caso a imagem ainda não exista
+            st.markdown("<h2 style='text-align:center; color:#ff4b4b; margin-top:0;'>ACELERA QUALITY</h2>", unsafe_allow_html=True)
+        st.divider()
+        # ==========================================
+
         foto_p = st.session_state.get('foto_url')
         if foto_p: st.markdown(f"<div style='text-align:center;'><img src='{foto_p}' style='width:90px;height:90px;border-radius:50%;object-fit:cover;border:2px solid #ff4b4b;'></div>", unsafe_allow_html=True)
         else: st.markdown("<div style='text-align:center;font-size:50px;'>👤</div>", unsafe_allow_html=True)
