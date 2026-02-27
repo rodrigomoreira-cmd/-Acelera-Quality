@@ -190,11 +190,23 @@ def render_nova_monitoria():
 
                         # 2. Regras de Medalhas (Gamificação)
                         if payload['nota'] == 100:
+                            # -------- LÓGICA DO COMBO (ON FIRE) --------
+                            res_historico = supabase.table("monitorias").select("nota").eq("sdr", sdr_escolhido).order("criado_em", desc=True).limit(3).execute()
+                            ultimas_notas = [float(r['nota']) for r in res_historico.data] if res_historico.data else []
+                            
+                            # Se ele tiver pelo menos 3 e as 3 forem nota 100...
+                            if len(ultimas_notas) == 3 and all(n == 100.0 for n in ultimas_notas):
+                                msg_medalha = "🔥 ON FIRE! Absoluto! Você conquistou 3 monitorias seguidas com nota 100%!"
+                            else:
+                                msg_medalha = "🎯 PARABÉNS! Você conquistou a Medalha Sniper (Nota 100%)."
+                                
                             supabase.table("notificacoes").insert({
                                 "usuario": sdr_escolhido, 
-                                "mensagem": "🎯 PARABÉNS! Você conquistou a Medalha Sniper (Nota 100%).", 
+                                "mensagem": msg_medalha, 
                                 "lida": False
                             }).execute()
+                            # -------------------------------------------
+                            
                         elif not fatal_detectado and payload['nota'] > 0:
                             supabase.table("notificacoes").insert({
                                 "usuario": sdr_escolhido, 
