@@ -1,4 +1,21 @@
-*.db
-.streamlit/
-.modularização
-.antigo
+# 1. SEGURANÇA MÁXIMA (Senhas e Chaves)
+.streamlit/secrets.toml
+.env
+*.pem
+*.key
+
+# 2. AMBIENTES VIRTUAIS (Arquivos pesados do seu PC)
+venv/
+env/
+.venv/
+
+# 3. CACHE E LIXO DO PYTHON (Arquivos temporários)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# 4. ARQUIVOS DO SISTEMA OPERACIONAL (Lixo de Mac/Windows)
+.DS_Store
+Thumbs.db
