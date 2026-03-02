@@ -7,6 +7,9 @@ def render_gestao_criterios():
     st.title("⚙️ Configuração de Critérios")
     st.markdown("Gerencie as perguntas do checklist de monitoria (com pesos e travas) e as competências do PDI.")
 
+    # Pega o nome do usuário logado para registrar no Log de Segurança
+    usuario_logado = st.session_state.get('user_nome', 'Sistema')
+
     # Listas globais para as duas abas
     OPCOES_CATEGORIAS = ["Nectar CRM", "Ambos - Processo SDR", "Identificar - Processo", "Integração", "Selene/Bot"]
     OPCOES_DEPARTAMENTO = ["SDR", "Especialista", "Venda de Ingresso", "Auditor", "Todos"]
@@ -60,9 +63,12 @@ def render_gestao_criterios():
                             }
                             supabase.table("criterios_qa").insert(payload).execute()
                             
+                            # CORREÇÃO: Log com o nome do usuário logado
                             registrar_auditoria(
                                 acao="CRIAR CRITÉRIO QA", 
-                                detalhes=f"Criou critério '{nome}' (Peso: {peso}, Fatal: {eh_fatal})"
+                                detalhes=f"Criou critério '{nome}' (Peso: {peso}, Fatal: {eh_fatal})",
+                                sdr_nome="N/A",
+                                monitor_responsavel=usuario_logado
                             )
                             
                             st.toast(f"✅ Critério adicionado!", icon="✨")
@@ -116,7 +122,8 @@ def render_gestao_criterios():
                                 }
                                 supabase.table("criterios_qa").update(upd_payload).eq("id", row["id"]).execute()
                         
-                        registrar_auditoria("EDIÇÃO EM MASSA QA", "Atualizou pesos e status dos critérios.")
+                        # CORREÇÃO: Log registrando quem fez a alteração em massa
+                        registrar_auditoria("EDIÇÃO EM MASSA QA", "Atualizou pesos e status dos critérios de qualidade.", "N/A", usuario_logado)
                         st.toast("✅ Base de critérios atualizada!", icon="💾")
                         time.sleep(1)
                         st.rerun()
@@ -133,17 +140,15 @@ def render_gestao_criterios():
             with st.form("novo_pdi_form", clear_on_submit=True):
                 st.markdown("### Nova Competência Comportamental")
                 
-                # --- MELHORIA: ADICIONADO FILTRO DE DEPARTAMENTO AQUI ---
                 c_nome_pdi, c_dept_pdi = st.columns([2, 1])
                 nome_pdi = c_nome_pdi.text_input("Nome da Soft Skill", placeholder="Ex: Inteligência Emocional")
-                dept_pdi = c_dept_pdi.selectbox("Departamento", OPCOES_DEPARTAMENTO, index=len(OPCOES_DEPARTAMENTO)-1) # Padrão "Todos"
+                dept_pdi = c_dept_pdi.selectbox("Departamento", OPCOES_DEPARTAMENTO, index=len(OPCOES_DEPARTAMENTO)-1)
                 
                 desc_pdi = st.text_input("Descrição Curta", placeholder="Como o gestor deve avaliar?")
                 
                 if st.form_submit_button("💾 Salvar Competência PDI", type="primary"):
                     if nome_pdi:
                         try:
-                            # --- MELHORIA: PAYLOAD AGORA SALVA O DEPARTAMENTO ---
                             payload_pdi = {
                                 "nome": nome_pdi.strip(), 
                                 "descricao": desc_pdi.strip(), 
@@ -151,7 +156,10 @@ def render_gestao_criterios():
                                 "esta_ativo": True
                             }
                             supabase.table("criterios_comportamentais").insert(payload_pdi).execute()
-                            registrar_auditoria("CRIAR CRITÉRIO PDI", f"Adicionou Skill: {nome_pdi}")
+                            
+                            # CORREÇÃO: Log identificando o usuário
+                            registrar_auditoria("CRIAR CRITÉRIO PDI", f"Adicionou Skill: {nome_pdi}", "N/A", usuario_logado)
+                            
                             st.toast(f"✅ Skill adicionada!", icon="🎯")
                             time.sleep(1)
                             st.rerun()
@@ -165,11 +173,9 @@ def render_gestao_criterios():
             df_comp = pd.DataFrame(res_comp.data) if res_comp.data else pd.DataFrame()
             
             if not df_comp.empty:
-                # Caso a coluna departamento não exista no pandas por ser muito velha, criamos provisória
                 if 'departamento' not in df_comp.columns:
                     df_comp['departamento'] = 'Todos'
 
-                # --- MELHORIA: ADICIONADO 'DEPARTAMENTO' NO EDITOR EM MASSA ---
                 df_edit_comp = st.data_editor(
                     df_comp[['id', 'nome', 'descricao', 'departamento', 'esta_ativo']],
                     column_config={
@@ -191,6 +197,10 @@ def render_gestao_criterios():
                                 "esta_ativo": bool(r["esta_ativo"])
                             }
                             supabase.table("criterios_comportamentais").update(p_pdi).eq("id", r["id"]).execute()
+                    
+                    # CORREÇÃO: Log ADICIONADO para quando desativar ou editar critérios PDI
+                    registrar_auditoria("EDIÇÃO EM MASSA PDI", "Atualizou nomes e status das competências do PDI.", "N/A", usuario_logado)
+                    
                     st.toast("✅ PDI Atualizado!")
                     time.sleep(1)
                     st.rerun()
