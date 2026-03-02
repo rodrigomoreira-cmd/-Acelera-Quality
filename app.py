@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import time
 from datetime import datetime, timedelta
-import os # Importado para verificar a existência da logo
+import os 
 
 from auth import render_login
 from dashboard import render_dashboard
@@ -16,6 +16,8 @@ from auditoria import render_auditoria
 from relatorios import render_relatorios 
 from gestao_criterios import render_gestao_criterios 
 from matriz_decisao import render_pdi
+# --- IMPORTS NOVOS AQUI ---
+from avaliacao_lideranca import render_avaliacao_lideranca, render_dashboard_lideranca, obter_ciclo_atual 
 from style import apply_custom_styles
 from database import get_all_records_db, supabase, buscar_contagem_notificacoes, limpar_todas_notificacoes, anular_monitoria_auditada, registrar_auditoria, remover_evidencia_monitoria
 
@@ -141,7 +143,6 @@ def render_historico_geral(nivel, nome_completo):
                     url_img = info.get('url_arquivo')
                     nome_arq = info.get('arquivo', 'Anexo')
 
-                    # CORREÇÃO: Mostrar evidência mesmo quando for Conforme (C)
                     if nota_c == "C": 
                         if tem_anexo or (coment and coment != 'Sem comentário.'):
                             with st.expander(f"✅ {pergunta} (Conforme)", expanded=False):
@@ -151,9 +152,10 @@ def render_historico_geral(nivel, nome_completo):
                                     col_link, col_btn = st.columns([3, 1])
                                     col_link.markdown(f"🔗 [Abrir Imagem Original]({url_img})")
                                     if nivel in ["ADMIN", "AUDITOR"]:
-                                        if col_btn.button("🗑️ Apagar Foto", key=f"del_img_{id_sel}_{pergunta}", help="Remove a imagem da nuvem"):
+                                        if col_btn.button("🗑️ Apagar Foto", key=f"del_img_{id_sel}_{pergunta}"):
                                             sucesso, msg = remover_evidencia_monitoria(id_sel, pergunta, url_img, nome_completo)
                                             if sucesso:
+                                                registrar_auditoria("EXCLUSÃO EVIDÊNCIA", f"Apagou foto da monitoria de {linha['sdr']}", linha['sdr'], nome_completo)
                                                 st.success("✅ " + msg)
                                                 time.sleep(1)
                                                 st.rerun()
@@ -170,9 +172,10 @@ def render_historico_geral(nivel, nome_completo):
                                     col_link, col_btn = st.columns([3, 1])
                                     col_link.markdown(f"🔗 [Abrir Imagem Original]({url_img})")
                                     if nivel in ["ADMIN", "AUDITOR"]:
-                                        if col_btn.button("🗑️ Apagar Foto", key=f"del_img_{id_sel}_{pergunta}", help="Remove a imagem da nuvem"):
+                                        if col_btn.button("🗑️ Apagar Foto", key=f"del_img_{id_sel}_{pergunta}"):
                                             sucesso, msg = remover_evidencia_monitoria(id_sel, pergunta, url_img, nome_completo)
                                             if sucesso:
+                                                registrar_auditoria("EXCLUSÃO EVIDÊNCIA", f"Apagou foto da monitoria de {linha['sdr']}", linha['sdr'], nome_completo)
                                                 st.success("✅ " + msg)
                                                 time.sleep(1)
                                                 st.rerun()
@@ -186,7 +189,6 @@ def render_historico_geral(nivel, nome_completo):
                 modal_anular(id_sel, linha['sdr'])
 
 def main():
-    # --- NOVO: Tenta carregar o ícone (Favicon), se falhar usa o padrão ---
     icon_path = "assets/icon.png" if os.path.exists("assets/logo.png") else "🚀"
     st.set_page_config(layout="wide", page_title="Acelera Quality", page_icon=icon_path)
     
@@ -227,16 +229,11 @@ def main():
     meu_dept = st.session_state.get('departamento', nivel)
 
     with st.sidebar:
-        # ==========================================
-        # NOVO: LOGO DA EMPRESA AQUI
-        # ==========================================
         if os.path.exists("assets/logo.png"):
             st.image("assets/logo.png", use_container_width=True)
         else:
-            # Fallback elegante caso a imagem ainda não exista
             st.markdown("<h2 style='text-align:center; color:#ff4b4b; margin-top:0;'>ACELERA QUALITY</h2>", unsafe_allow_html=True)
         st.divider()
-        # ==========================================
 
         foto_p = st.session_state.get('foto_url')
         if foto_p: st.markdown(f"<div style='text-align:center;'><img src='{foto_p}' style='width:90px;height:90px;border-radius:50%;object-fit:cover;border:2px solid #ff4b4b;'></div>", unsafe_allow_html=True)
@@ -249,6 +246,31 @@ def main():
         st.markdown(f"<h3 style='text-align:center; margin-bottom: 0;'>{nome_completo}</h3>", unsafe_allow_html=True)
         st.markdown(f"<div style='text-align: center; margin-top: 5px; margin-bottom: 15px;'><span style='background-color: #ff4b4b22; color: #ff4b4b; padding: 4px 15px; border-radius: 20px; font-size: 13px; font-weight: bold; border: 1px solid #ff4b4b44; text-transform: uppercase;'>{rotulo_perfil}</span></div>", unsafe_allow_html=True)
         st.divider()
+        
+        # ==========================================================
+        # GATILHO INTELIGENTE: AVISO DE AVALIAÇÃO DE LÍDERES ABERTA
+        # ==========================================================
+        ciclo_atual_nome, janela_aberta, _ = obter_ciclo_atual()
+        
+        if janela_aberta:
+            # NOVO: Verifica se o utilizador já preencheu a avaliação neste ciclo
+            ja_avaliou_neste_ciclo = False
+            try:
+                res_aval = supabase.table("avaliacoes_lideranca").select("id").eq("avaliador_nome", nome_completo).eq("ciclo_avaliacao", ciclo_atual_nome).limit(1).execute()
+                if res_aval.data:
+                    ja_avaliou_neste_ciclo = True
+            except:
+                pass
+                
+            # Só mostra o alerta vermelho se a janela estiver aberta E o utilizador AINDA NÃO tiver avaliado
+            if not ja_avaliou_neste_ciclo:
+                st.markdown(f"""
+                <div style='background-color: #ff4b4b; color: white; padding: 10px; border-radius: 8px; text-align: center; margin-bottom: 15px; animation: pulse-red 2s infinite;'>
+                    <strong>🚨 AVALIAÇÃO ABERTA!</strong><br>
+                    <small>A janela do {ciclo_atual_nome} está liberada. Vá ao menu 'Avaliar Gestor'.</small>
+                </div>
+                """, unsafe_allow_html=True)
+        # ==========================================================
         
         st.markdown("**🏢 Visão por Departamento**")
         
@@ -314,17 +336,19 @@ def main():
             def_btn_type = "primary" if st.session_state.current_page == target else "secondary"
             if st.button(label, use_container_width=True, type=def_btn_type):
                 st.session_state.current_page = target
-                st.rerun()
 
         menu("📊 DASHBOARD", "DASHBOARD")
         
+        # MENUS PARA O COLABORADOR PADRÃO (SDR, ETC)
         if nivel not in ["ADMIN", "GESTAO", "AUDITOR", "GERENCIA"]:
             menu("⚖️ CONTESTAR NOTA", "CONTESTACAO")
             menu("📈 MEUS RESULTADOS", "MEUS_RESULTADOS")
             menu("📚 HISTÓRICO", "HISTORICO")
             menu("🎯 MEU PDI", "PDI")  
+            menu("⬆️ AVALIAR GESTOR", "AVALIAR_LIDERANCA") 
             
         else:
+            # MENUS PARA A LIDERANÇA / ADMIN
             if nivel in ["ADMIN", "GERENCIA", "AUDITOR"]:
                 menu("📝 NOVA MONITORIA", "MONITORIA")
                 menu("⚖️ CONTESTAÇÕES", "CONTESTACAO")
@@ -336,6 +360,10 @@ def main():
             
             if nivel in ["ADMIN", "GERENCIA", "GESTAO"]:
                 menu("🎯 MATRIZ DE DECISÃO", "PDI") 
+                
+# GESTORES TAMBÉM PODEM AVALIAR SEUS SUPERIORES E O ADMIN VÊ O DASHBOARD
+            if nivel in ["ADMIN", "GERENCIA", "GESTAO", "AUDITOR"]:
+                menu("⬆️ AVALIAR LIDERANÇA", "AVALIAR_LIDERANCA")
             
             if nivel in ["ADMIN", "AUDITOR"]:
                 menu("⚙️ CONFIG. CRITÉRIOS", "CONFIG_CRITERIOS")
@@ -367,7 +395,6 @@ def main():
         else:
             if st.button("Sair do Sistema", use_container_width=True):
                 st.session_state.logout_step = True
-                st.rerun()
 
     page = st.session_state.current_page
     try:
@@ -384,6 +411,17 @@ def main():
             elif p == "CONFIG_CRITERIOS": render_gestao_criterios()
             elif p == "AUDITORIA": render_auditoria()
             elif p == "PDI": render_pdi() 
+            # --- LÓGICA DAS ABAS DA LIDERANÇA AQUI ---
+            elif p == "AVALIAR_LIDERANCA": 
+                aba1, aba2 = st.tabs(["📝 Realizar Avaliação", "📊 Meus Resultados"])
+                with aba1:
+                    render_avaliacao_lideranca()
+                with aba2:
+                    if st.session_state.nivel in ["GESTAO", "GERENCIA", "ADMIN"]:
+                        render_dashboard_lideranca()
+                    else:
+                        st.info("Esta aba é exclusiva para visualização de resultados de gestores.")
+            # ----------------------------------------
         render_page(page)
     except Exception as e:
         st.error(f"Erro ao carregar página: {e}")
