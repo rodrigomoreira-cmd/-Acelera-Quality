@@ -4,6 +4,10 @@ import time
 import uuid
 from database import salvar_monitoria_auditada, supabase
 
+# --- IMPORT DA IA AQUI ---
+from analise_ia import sugerir_pdi_ia
+# -------------------------
+
 def render_nova_monitoria():
     dept_selecionado = st.session_state.get('departamento_selecionado', 'Todos')
     nivel_logado = st.session_state.get('nivel', 'USUARIO').upper()
@@ -104,10 +108,33 @@ def render_nova_monitoria():
                     }
                     st.divider()
 
-        observacoes = st.text_area("Pontos Positivos e Planos de Ação:", height=150)
+        # Puxa o rascunho da IA se houver
+        texto_inicial = st.session_state.get('feedback_sugerido', '')
+        observacoes = st.text_area("Pontos Positivos e Planos de Ação:", value=texto_inicial, height=150)
 
-        if st.form_submit_button("🚀 Finalizar e Enviar Monitoria", use_container_width=True, type="primary"):
-            
+        st.markdown("<br>", unsafe_allow_html=True)
+        col_btn_ia, col_btn_salvar = st.columns(2)
+        
+        # 🤖 BOTÃO 1: GERAR PDI COM IA
+        btn_ia = col_btn_ia.form_submit_button("🤖 Sugerir PDI com IA (Rascunho)", use_container_width=True)
+        # 🚀 BOTÃO 2: FINALIZAR
+        btn_salvar = col_btn_salvar.form_submit_button("🚀 Finalizar e Enviar Monitoria", use_container_width=True, type="primary")
+
+        # --- LÓGICA DO BOTÃO DA IA ---
+        if btn_ia:
+            erros_para_ia = {nome: item['comentario'] for nome, item in respostas.items() if item['valor'] in ["NC", "NC Grave"]}
+            if not erros_para_ia:
+                st.info("✨ Nenhum erro marcado. A IA sugere enviar um feedback de parabéns!")
+                st.session_state['feedback_sugerido'] = f"Excelente atendimento, {sdr_escolhido}! Você seguiu os processos com perfeição. Parabéns pelo resultado e continue assim!"
+                st.rerun()
+            else:
+                with st.spinner("🧠 Lendo os erros e criando o plano de ação..."):
+                    sugestao = sugerir_pdi_ia(erros_para_ia, dept_do_colaborador)
+                    st.session_state['feedback_sugerido'] = sugestao
+                    st.rerun() # Recarrega para mostrar o texto na caixa de observações
+
+        # --- LÓGICA DO BOTÃO DE SALVAR ---
+        if btn_salvar:
             with st.spinner("Calculando nota e processando evidências..."):
                 total_maximo_ponderado = 0.0
                 total_conquistado_ponderado = 0.0
@@ -175,6 +202,10 @@ def render_nova_monitoria():
                 sucesso, msg = salvar_monitoria_auditada(payload)
                 
                 if sucesso:
+                    # Limpa o feedback sugerido do cache para a próxima monitoria
+                    if 'feedback_sugerido' in st.session_state:
+                        del st.session_state['feedback_sugerido']
+
                     st.success(f"✅ Monitoria salva com nota {payload['nota']}%!")
                     
                     # ==========================================================

@@ -5,6 +5,10 @@ import pytz
 from datetime import datetime
 from database import supabase, get_all_records_db, registrar_auditoria
 
+# --- IMPORT DA IA AQUI ---
+from analise_ia import analisar_sentimento_texto 
+# -------------------------
+
 def render_contestacao():
     nivel = st.session_state.get('nivel', 'USUARIO')
     nome_completo = st.session_state.get('user_nome', '')
@@ -159,12 +163,19 @@ def render_contestacao():
                                 st.warning("⚠️ Escreva uma justificativa clara (mínimo de 10 caracteres).")
                             else:
                                 try:
+                                    # --- CHAMADA DA INTELIGÊNCIA ARTIFICIAL ---
+                                    with st.spinner("🤖 Processando contestação com IA..."):
+                                        sent_ia, res_ia = analisar_sentimento_texto(motivo_sdr)
+                                    # ------------------------------------------
+
                                     payload = {
                                         "monitoria_id": id_sel,
                                         "motivo": motivo_sdr,
                                         "status": "Pendente",
                                         "resposta_admin": "",
-                                        "visualizada": False
+                                        "visualizada": False,
+                                        "sentimento_ia": sent_ia,  # Salvando a Tag da IA
+                                        "resumo_ia": res_ia        # Salvando o Resumo da IA
                                     }
                                     coluna_nome_bd = 'sdr_nome' if df_contestacoes is not None and 'sdr_nome' in df_contestacoes.columns else 'sdr'
                                     payload[coluna_nome_bd] = nome_completo
@@ -269,12 +280,23 @@ def render_contestacao():
                     else:
                         data_formatada = "Data N/D"
 
-                    with st.expander(f"📅 {data_formatada} | 🚨 Colaborador: {nome_colaborador} | Avaliador Orig: {auditor_original} | Nota: {nota_limpa}%", expanded=True):
+                    # --- PEGANDO OS DADOS DA IA PARA MOSTRAR AO GESTOR ---
+                    tag_ia = row.get('sentimento_ia', '🤖 Sem IA')
+                    if pd.isna(tag_ia): tag_ia = '🤖 Sem IA'
+                    resumo_ia = row.get('resumo_ia', '')
+
+                    with st.expander(f"📅 {data_formatada} | 🚨 Colab: {nome_colaborador} | Avaliador: {auditor_original} | IA: {tag_ia}", expanded=True):
                         col_l, col_r = st.columns([1, 1])
                         
                         with col_l:
                             st.markdown("**Defesa do Colaborador:**")
                             st.info(f"*{row['motivo']}*")
+                            
+                            # Exibe o resumo gerado pela IA se existir
+                            if pd.notna(resumo_ia) and resumo_ia != "":
+                                st.markdown(f"**🧠 Resumo da IA ({tag_ia}):**")
+                                st.caption(f"_{resumo_ia}_")
+
                             if pd.notna(row.get('link_selene')): st.markdown(f"🎧 [Ouvir Gravação]({row['link_selene']})")
                             if pd.notna(row.get('link_nectar')): st.markdown(f"🗂️ [Acessar CRM]({row['link_nectar']})")
 
@@ -310,7 +332,7 @@ def render_contestacao():
                                     # 🔔 GATILHOS DE COMUNICAÇÃO (AVISA O SDR)
                                     # ==========================================================
                                     try:
-                                        # 1. Avisa o SDR que houve um resultado (Independente de Aceita/Recusada)
+                                        # 1. Avisa o SDR que houve um resultado
                                         supabase.table("notificacoes").insert({
                                             "usuario": nome_colaborador,
                                             "mensagem": f"⚖️ Sua contestação foi avaliada como: {decisao}. Acesse a Central de Contestações para ler o feedback.",

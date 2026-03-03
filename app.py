@@ -32,7 +32,8 @@ def modal_anular(id_mon, sdr_nome):
     
     col_a, col_b = st.columns(2)
     if col_a.button("Confirmar Exclusão", type="primary", use_container_width=True):
-        if not motivo or len(motivo) < 5: st.error("Escreva um motivo válido.")
+        if not motivo or len(motivo) < 5: 
+            st.error("Escreva um motivo válido.")
         else:
             quem_esta_logado = st.session_state.get('user_nome', 'Admin Desconhecido')
             sucesso, msg = anular_monitoria_auditada(id_mon, motivo, quem_esta_logado)
@@ -40,10 +41,15 @@ def modal_anular(id_mon, sdr_nome):
                 st.success("Registro removido e arquivos apagados da nuvem!")
                 time.sleep(1.5)
                 st.rerun()
-            else: st.error(f"Erro: {msg}")
+            else: 
+                st.error(f"Erro: {msg}")
     
-    if col_b.button("Cancelar", use_container_width=True): st.rerun()
+    if col_b.button("Cancelar", use_container_width=True): 
+        st.rerun()
 
+# ==========================================================
+# HISTÓRICO GERAL ATUALIZADO (COM FILTROS AVANÇADOS)
+# ==========================================================
 def render_historico_geral(nivel, nome_completo):
     dept_selecionado = st.session_state.get('departamento_selecionado', 'Todos')
     st.title(f"📚 Histórico Consolidado - {dept_selecionado}")
@@ -69,6 +75,7 @@ def render_historico_geral(nivel, nome_completo):
         df_contestacoes['monitoria_id'] = df_contestacoes['monitoria_id'].astype(str).str.strip()
         df_cont_resumo = df_contestacoes[['monitoria_id', 'status', 'resposta_admin']].rename(columns={'status': 'Situação'})
         df_exibicao = pd.merge(df_monitorias, df_cont_resumo, left_on='id', right_on='monitoria_id', how='left')
+        df_exibicao['Situação'] = df_exibicao['Situação'].fillna("Nenhuma")
     else:
         df_exibicao = df_monitorias.copy()
         df_exibicao['Situação'] = "Nenhuma"
@@ -76,8 +83,6 @@ def render_historico_geral(nivel, nome_completo):
     if dept_selecionado != "Todos" and 'departamento' in df_exibicao.columns:
         df_exibicao = df_exibicao[df_exibicao['departamento'].astype(str).str.strip().str.upper() == dept_selecionado.strip().upper()].copy()
 
-    df_exibicao['Data'] = df_exibicao['criado_em'].dt.strftime('%d/%m/%Y %H:%M').fillna("Data N/D")
-    
     if nivel != "ADMIN":
         df_exibicao = df_exibicao[
             (df_exibicao['sdr'] != 'admin@grupoacelerador.com.br') & 
@@ -86,13 +91,47 @@ def render_historico_geral(nivel, nome_completo):
 
     if nivel not in ["ADMIN", "GESTAO", "AUDITOR", "GERENCIA"]:
         df_exibicao = df_exibicao[df_exibicao['sdr'].str.strip().str.upper() == nome_completo.strip().upper()].copy()
-    else:
-        c_busca, _ = st.columns([1, 1])
-        busca = c_busca.text_input("🔍 Pesquisar Colaborador:")
-        if busca: df_exibicao = df_exibicao[df_exibicao['sdr'].str.contains(busca, case=False, na=False)].copy()
 
     if df_exibicao.empty:
-        st.info("Nenhum dado encontrado.")
+        st.info("Nenhum dado encontrado para o seu perfil/departamento.")
+        return
+
+    # --- SEÇÃO DE FILTROS AVANÇADOS PARA LIDERANÇA ---
+    if nivel in ["ADMIN", "GESTAO", "AUDITOR", "GERENCIA"]:
+        with st.expander("🔎 Filtros Avançados", expanded=True):
+            col1, col2, col3, col4 = st.columns(4)
+            
+            # 1. Filtro Colaborador (SDR)
+            lista_sdrs = ["Todos"] + sorted(df_exibicao['sdr'].dropna().unique().tolist())
+            filtro_sdr = col1.selectbox("Colaborador:", lista_sdrs)
+            
+            # 2. Filtro Avaliador (Monitor)
+            lista_avaliadores = ["Todos"] + sorted(df_exibicao['monitor_responsavel'].dropna().unique().tolist())
+            filtro_avaliador = col2.selectbox("Avaliador:", lista_avaliadores)
+            
+            # 3. Filtro de Situação (Contestação)
+            lista_situacoes = ["Todas"] + sorted(df_exibicao['Situação'].astype(str).unique().tolist())
+            filtro_situacao = col3.selectbox("Status da Contestação:", lista_situacoes)
+            
+            # 4. Filtro Mês/Ano
+            df_exibicao['MesAno'] = df_exibicao['criado_em'].dt.strftime('%m/%Y')
+            lista_meses = ["Todos"] + df_exibicao['MesAno'].dropna().unique().tolist()
+            filtro_mes = col4.selectbox("Mês/Ano:", lista_meses)
+
+            # Aplicação dos filtros selecionados
+            if filtro_sdr != "Todos":
+                df_exibicao = df_exibicao[df_exibicao['sdr'] == filtro_sdr]
+            if filtro_avaliador != "Todos":
+                df_exibicao = df_exibicao[df_exibicao['monitor_responsavel'] == filtro_avaliador]
+            if filtro_situacao != "Todas":
+                df_exibicao = df_exibicao[df_exibicao['Situação'] == filtro_situacao]
+            if filtro_mes != "Todos":
+                df_exibicao = df_exibicao[df_exibicao['MesAno'] == filtro_mes]
+
+    df_exibicao['Data'] = df_exibicao['criado_em'].dt.strftime('%d/%m/%Y %H:%M').fillna("Data N/D")
+
+    if df_exibicao.empty:
+        st.warning("Nenhum registro corresponde aos filtros selecionados.")
         return
 
     st.dataframe(
@@ -115,22 +154,28 @@ def render_historico_geral(nivel, nome_completo):
         try:
             res_aud = supabase.table("usuarios").select("foto_url").eq("nome", auditor_nome).execute()
             foto_auditor = res_aud.data[0].get('foto_url') if res_aud.data else None
-        except: foto_auditor = None
+        except: 
+            foto_auditor = None
 
         with st.container(border=True):
             c_f, c_t = st.columns([1, 4])
             with c_f:
-                if foto_auditor: st.markdown(f'<img src="{foto_auditor}" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid #ff4b4b;">', unsafe_allow_html=True)
-                else: st.markdown('<div style="font-size: 60px;">🕵️</div>', unsafe_allow_html=True)
+                if foto_auditor: 
+                    st.markdown(f'<img src="{foto_auditor}" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid #ff4b4b;">', unsafe_allow_html=True)
+                else: 
+                    st.markdown('<div style="font-size: 60px;">🕵️</div>', unsafe_allow_html=True)
             with c_t:
                 st.markdown(f"#### Avaliador: {auditor_nome}")
                 st.markdown(f"**Avaliado:** {linha['sdr']} | **Nota:** `{linha['nota']}%`")
             
-            if linha.get('observacoes'): st.info(f"💬 **Feedback:** {linha['observacoes']}")
+            if linha.get('observacoes'): 
+                st.info(f"💬 **Feedback:** {linha['observacoes']}")
             
             c_l1, c_l2 = st.columns(2)
-            if linha.get('link_selene'): c_l1.markdown(f"🔗 [Gravação Selene]({linha['link_selene']})")
-            if linha.get('link_nectar'): c_l2.markdown(f"🗂️ [Card CRM Nectar]({linha['link_nectar']})")
+            if linha.get('link_selene'): 
+                c_l1.markdown(f"🔗 [Gravação Selene]({linha['link_selene']})")
+            if linha.get('link_nectar'): 
+                c_l2.markdown(f"🗂️ [Card CRM Nectar]({linha['link_nectar']})")
 
         st.markdown("### 📋 Detalhamento")
         detalhes = linha.get('detalhes')
@@ -146,7 +191,8 @@ def render_historico_geral(nivel, nome_completo):
                     if nota_c == "C": 
                         if tem_anexo or (coment and coment != 'Sem comentário.'):
                             with st.expander(f"✅ {pergunta} (Conforme)", expanded=False):
-                                if coment and coment != 'Sem comentário.': st.write(f"**Comentário:** {coment}")
+                                if coment and coment != 'Sem comentário.': 
+                                    st.write(f"**Comentário:** {coment}")
                                 if tem_anexo and url_img:
                                     st.image(url_img, caption=f"Evidência Positiva: {nome_arq}", use_container_width=True)
                                     col_link, col_btn = st.columns([3, 1])
@@ -159,7 +205,8 @@ def render_historico_geral(nivel, nome_completo):
                                                 st.success("✅ " + msg)
                                                 time.sleep(1)
                                                 st.rerun()
-                                            else: st.error("❌ " + msg)
+                                            else: 
+                                                st.error("❌ " + msg)
                         else:
                             st.success(f"✅ **{pergunta}**")
                             
@@ -179,9 +226,12 @@ def render_historico_geral(nivel, nome_completo):
                                                 st.success("✅ " + msg)
                                                 time.sleep(1)
                                                 st.rerun()
-                                            else: st.error("❌ " + msg)
-                                else: st.warning("⚠️ O arquivo foi registado, mas a URL falhou.")
-                    else: st.markdown(f"➖ **{pergunta}** (NSA)")
+                                            else: 
+                                                st.error("❌ " + msg)
+                                else: 
+                                    st.warning("⚠️ O arquivo foi registado, mas a URL falhou.")
+                    else: 
+                        st.markdown(f"➖ **{pergunta}** (NSA)")
                     
         if nivel == "ADMIN":
             st.divider()
@@ -214,9 +264,12 @@ def main():
     </style>
     """, unsafe_allow_html=True)
 
-    if "authenticated" not in st.session_state: st.session_state.authenticated = False
-    if "departamento_selecionado" not in st.session_state: st.session_state.departamento_selecionado = "Todos"
-    if "current_page" not in st.session_state: st.session_state.current_page = "DASHBOARD"
+    if "authenticated" not in st.session_state: 
+        st.session_state.authenticated = False
+    if "departamento_selecionado" not in st.session_state: 
+        st.session_state.departamento_selecionado = "Todos"
+    if "current_page" not in st.session_state: 
+        st.session_state.current_page = "DASHBOARD"
 
     if not st.session_state.authenticated:
         render_login()
@@ -236,8 +289,10 @@ def main():
         st.divider()
 
         foto_p = st.session_state.get('foto_url')
-        if foto_p: st.markdown(f"<div style='text-align:center;'><img src='{foto_p}' style='width:90px;height:90px;border-radius:50%;object-fit:cover;border:2px solid #ff4b4b;'></div>", unsafe_allow_html=True)
-        else: st.markdown("<div style='text-align:center;font-size:50px;'>👤</div>", unsafe_allow_html=True)
+        if foto_p: 
+            st.markdown(f"<div style='text-align:center;'><img src='{foto_p}' style='width:90px;height:90px;border-radius:50%;object-fit:cover;border:2px solid #ff4b4b;'></div>", unsafe_allow_html=True)
+        else: 
+            st.markdown("<div style='text-align:center;font-size:50px;'>👤</div>", unsafe_allow_html=True)
 
         if nivel == "ADMIN": rotulo_perfil = "ADMINISTRADOR"
         elif nivel == "GERENCIA": rotulo_perfil = "GERÊNCIA"
@@ -253,7 +308,6 @@ def main():
         ciclo_atual_nome, janela_aberta, _ = obter_ciclo_atual()
         
         if janela_aberta:
-            # NOVO: Verifica se o utilizador já preencheu a avaliação neste ciclo
             ja_avaliou_neste_ciclo = False
             try:
                 res_aval = supabase.table("avaliacoes_lideranca").select("id").eq("avaliador_nome", nome_completo).eq("ciclo_avaliacao", ciclo_atual_nome).limit(1).execute()
@@ -262,12 +316,11 @@ def main():
             except:
                 pass
                 
-            # Só mostra o alerta vermelho se a janela estiver aberta E o utilizador AINDA NÃO tiver avaliado
             if not ja_avaliou_neste_ciclo:
                 st.markdown(f"""
                 <div style='background-color: #ff4b4b; color: white; padding: 10px; border-radius: 8px; text-align: center; margin-bottom: 15px; animation: pulse-red 2s infinite;'>
                     <strong>🚨 AVALIAÇÃO ABERTA!</strong><br>
-                    <small>A janela do {ciclo_atual_nome} está liberada. Vá ao menu 'Avaliar Gestor'.</small>
+                    <small>A janela do {ciclo_atual_nome} está liberada. Vá ao menu 'Avaliar Liderança'.</small>
                 </div>
                 """, unsafe_allow_html=True)
         # ==========================================================
@@ -361,7 +414,7 @@ def main():
             if nivel in ["ADMIN", "GERENCIA", "GESTAO"]:
                 menu("🎯 MATRIZ DE DECISÃO", "PDI") 
                 
-# GESTORES TAMBÉM PODEM AVALIAR SEUS SUPERIORES E O ADMIN VÊ O DASHBOARD
+            # GESTORES TAMBÉM PODEM AVALIAR SEUS SUPERIORES E O ADMIN VÊ O DASHBOARD
             if nivel in ["ADMIN", "GERENCIA", "GESTAO", "AUDITOR"]:
                 menu("⬆️ AVALIAR LIDERANÇA", "AVALIAR_LIDERANCA")
             
