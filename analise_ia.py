@@ -1,13 +1,6 @@
 import streamlit as st
 from groq import Groq
 
-# Inicializa o cliente Groq
-try:
-    CHAVE_GROQ = st.secrets["GROQ_API_KEY"]
-    client = Groq(api_key=CHAVE_GROQ)
-except Exception:
-    st.error("⚠️ Chave GROQ_API_KEY não encontrada nos secrets.")
-
 # ---------------------------------------------------------
 # 1. FUNÇÃO PARA CONTESTAÇÕES (SENTIMENTO)
 # ---------------------------------------------------------
@@ -16,6 +9,9 @@ def analisar_sentimento_texto(texto):
         return "🟡 Neutro", "Texto muito curto para análise."
 
     try:
+        # A MÁGICA AQUI: O client é criado na hora que a função é chamada!
+        client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+        
         chat_completion = client.chat.completions.create(
             messages=[
                 {
@@ -52,18 +48,13 @@ def analisar_sentimento_texto(texto):
     except Exception as e:
         return "⚪ Erro", f"Falha no Groq: {str(e)}"
 
-
 # ---------------------------------------------------------
 # 2. FUNÇÃO PARA MONITORIAS (SUGESTÃO DE PDI/FEEDBACK)
 # ---------------------------------------------------------
 def sugerir_pdi_ia(itens_reprovados, departamento):
-    """
-    Gera um PDI (Plano de Desenvolvimento Individual) curto baseado nos erros.
-    """
     if not itens_reprovados:
         return "Excelente atendimento! Você seguiu todos os processos com perfeição."
 
-    # Monta a lista de erros para o prompt
     texto_erros = "\n".join([f"- Item: {k} | Motivo: {v}" for k, v in itens_reprovados.items()])
     
     prompt = f"""
@@ -79,6 +70,8 @@ def sugerir_pdi_ia(itens_reprovados, departamento):
     """
     
     try:
+        client = Groq(api_key=st.secrets["GROQ_API_KEY"]) # <-- Client aqui dentro também
+        
         chat_completion = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
             model="llama-3.1-8b-instant",
@@ -87,14 +80,11 @@ def sugerir_pdi_ia(itens_reprovados, departamento):
         return chat_completion.choices[0].message.content
     except Exception as e:
         return f"Erro ao gerar sugestão da IA: {str(e)}"
-    
+
 # ---------------------------------------------------------
 # 3. FUNÇÃO PARA AVALIAÇÃO DE LIDERANÇA (TERMÔMETRO)
 # ---------------------------------------------------------
 def analisar_clima_lideranca(texto):
-    """
-    Analisa comentários sobre líderes e classifica o clima organizacional.
-    """
     if not texto or len(texto.strip()) < 5:
         return "⚪ Sem dados", "Comentário muito curto para análise."
 
@@ -110,10 +100,12 @@ def analisar_clima_lideranca(texto):
     """
     
     try:
+        client = Groq(api_key=st.secrets["GROQ_API_KEY"]) # <-- E aqui também!
+        
         chat_completion = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
             model="llama-3.1-8b-instant",
-            temperature=0.1, # Temperatura baixa para análises mais precisas e padronizadas
+            temperature=0.1, 
         )
         res_ia = chat_completion.choices[0].message.content
         
