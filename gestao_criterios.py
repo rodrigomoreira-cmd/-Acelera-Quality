@@ -5,7 +5,7 @@ import time
 
 def render_gestao_criterios():
     st.title("⚙️ Configuração de Critérios")
-    st.markdown("Gerencie as perguntas do checklist de monitoria, competências do PDI e critérios de Liderança.")
+    st.markdown("Gerencie as perguntas do checklist de monitoria e competências do PDI.")
 
     usuario_logado = st.session_state.get('user_nome', 'Sistema')
 
@@ -13,9 +13,10 @@ def render_gestao_criterios():
     OPCOES_DEPARTAMENTO = ["SDR", "Especialista", "Venda de Ingresso", "Auditor", "Todos"]
 
     # ==========================================================
-    # NOVO: ADICIONADA A TERCEIRA ABA (LIDERANÇA)
+    # MODIFICADO: A TERCEIRA ABA (LIDERANÇA) FOI COMENTADA E REMOVIDA DA VISÃO
     # ==========================================================
-    aba_qa, aba_pdi, aba_lid = st.tabs(["🎧 Critérios de Qualidade (QA)", "🎯 Competências PDI", "⬆️ Avaliação Liderança (360)"])
+    # aba_qa, aba_pdi, aba_lid = st.tabs(["🎧 Critérios de Qualidade (QA)", "🎯 Competências PDI", "⬆️ Avaliação Liderança (360)"])
+    aba_qa, aba_pdi = st.tabs(["🎧 Critérios de Qualidade (QA)", "🎯 Competências PDI"])
 
     # ==========================================================
     # ABA 1: CRITÉRIOS DE QUALIDADE (QA)
@@ -173,73 +174,73 @@ def render_gestao_criterios():
         except Exception as e: st.info(f"Crie o primeiro critério de PDI acima. (Erro: {e})")
 
     # ==========================================================
-    # ABA 3: CRITÉRIOS DE LIDERANÇA (360) - NOVO!
+    # ABA 3: CRITÉRIOS DE LIDERANÇA (360) - COMENTADO
     # ==========================================================
-    with aba_lid:
-        with st.expander("➕ Adicionar Novo Critério de Liderança", expanded=False):
-            with st.form("novo_lid_form", clear_on_submit=True):
-                st.markdown("### Novo Critério para Avaliar Gestores")
-                nome_lid = st.text_input("Nome do Critério", placeholder="Ex: Comunicação Clara")
-                desc_lid = st.text_input("Descrição", placeholder="Como o SDR deve avaliar isso?")
-                
-                if st.form_submit_button("💾 Salvar Critério de Liderança", type="primary"):
-                    if nome_lid:
-                        try:
-                            payload_lid = {
-                                "nome": nome_lid.strip(), 
-                                "descricao": desc_lid.strip(), 
-                                "esta_ativo": True
-                            }
-                            supabase.table("criterios_lideranca").insert(payload_lid).execute()
-                            registrar_auditoria("CRIAR CRITÉRIO LIDERANÇA", f"Adicionou critério: {nome_lid}", "Geral", usuario_logado)
-                            st.toast(f"✅ Critério adicionado!", icon="🎯")
-                            time.sleep(1); st.rerun()
-                        except Exception as e: st.error(f"Erro: {e}")
-                    else: st.warning("⚠️ O Nome do critério é obrigatório.")
-
-        st.divider()
-        st.subheader("📝 Editar Critérios de Liderança")
-        try:
-            res_lid = supabase.table("criterios_lideranca").select("*").order("nome").execute()
-            df_lid = pd.DataFrame(res_lid.data) if res_lid.data else pd.DataFrame()
-            
-            if not df_lid.empty:
-                df_edit_lid = st.data_editor(
-                    df_lid[['id', 'nome', 'descricao', 'esta_ativo']],
-                    column_config={
-                        "id": st.column_config.TextColumn("ID", disabled=True),
-                        "nome": st.column_config.TextColumn("Nome do Critério", required=True),
-                        "esta_ativo": st.column_config.CheckboxColumn("Ativo?")
-                    },
-                    hide_index=True, use_container_width=True
-                )
-
-                if st.button("🔄 Salvar Alterações em Massa (Liderança)", type="primary", use_container_width=True):
-                    houve_mudanca = False
-                    for index, r in df_edit_lid.iterrows():
-                        orig_lid = df_lid.loc[index]
-                        
-                        if (str(orig_lid['nome']) != str(r['nome']) or
-                            str(orig_lid.get('descricao', '')) != str(r.get('descricao', '')) or
-                            bool(orig_lid['esta_ativo']) != bool(r['esta_ativo'])):
-                            
-                            houve_mudanca = True
-                            p_lid = {
-                                "nome": str(r["nome"]), "descricao": str(r.get("descricao", "")), 
-                                "esta_ativo": bool(r["esta_ativo"])
-                            }
-                            supabase.table("criterios_lideranca").update(p_lid).eq("id", r["id"]).execute()
-                            
-                            if bool(orig_lid['esta_ativo']) != bool(r['esta_ativo']):
-                                acao = "Ativou" if r['esta_ativo'] else "Desativou"
-                                registrar_auditoria("STATUS CRITÉRIO LIDERANÇA", f"{acao} o critério: '{r['nome']}'", "Geral", usuario_logado)
-                            else:
-                                registrar_auditoria("EDIÇÃO CRITÉRIO LIDERANÇA", f"Editou o critério: '{r['nome']}'", "Geral", usuario_logado)
-                    
-                    if houve_mudanca:
-                        st.toast("✅ Critérios Atualizados com Sucesso!")
-                        time.sleep(1); st.rerun()
-                    else:
-                        st.info("Nenhuma alteração detectada.")
-        except Exception as e:
-            st.info(f"Crie o primeiro critério de Liderança acima. (Erro: {e})")
+    # with aba_lid:
+    #     with st.expander("➕ Adicionar Novo Critério de Liderança", expanded=False):
+    #         with st.form("novo_lid_form", clear_on_submit=True):
+    #             st.markdown("### Novo Critério para Avaliar Gestores")
+    #             nome_lid = st.text_input("Nome do Critério", placeholder="Ex: Comunicação Clara")
+    #             desc_lid = st.text_input("Descrição", placeholder="Como o SDR deve avaliar isso?")
+    #             
+    #             if st.form_submit_button("💾 Salvar Critério de Liderança", type="primary"):
+    #                 if nome_lid:
+    #                     try:
+    #                         payload_lid = {
+    #                             "nome": nome_lid.strip(), 
+    #                             "descricao": desc_lid.strip(), 
+    #                             "esta_ativo": True
+    #                         }
+    #                         supabase.table("criterios_lideranca").insert(payload_lid).execute()
+    #                         registrar_auditoria("CRIAR CRITÉRIO LIDERANÇA", f"Adicionou critério: {nome_lid}", "Geral", usuario_logado)
+    #                         st.toast(f"✅ Critério adicionado!", icon="🎯")
+    #                         time.sleep(1); st.rerun()
+    #                     except Exception as e: st.error(f"Erro: {e}")
+    #                 else: st.warning("⚠️ O Nome do critério é obrigatório.")
+    #
+    #     st.divider()
+    #     st.subheader("📝 Editar Critérios de Liderança")
+    #     try:
+    #         res_lid = supabase.table("criterios_lideranca").select("*").order("nome").execute()
+    #         df_lid = pd.DataFrame(res_lid.data) if res_lid.data else pd.DataFrame()
+    #         
+    #         if not df_lid.empty:
+    #             df_edit_lid = st.data_editor(
+    #                 df_lid[['id', 'nome', 'descricao', 'esta_ativo']],
+    #                 column_config={
+    #                     "id": st.column_config.TextColumn("ID", disabled=True),
+    #                     "nome": st.column_config.TextColumn("Nome do Critério", required=True),
+    #                     "esta_ativo": st.column_config.CheckboxColumn("Ativo?")
+    #                 },
+    #                 hide_index=True, use_container_width=True
+    #             )
+    #
+    #             if st.button("🔄 Salvar Alterações em Massa (Liderança)", type="primary", use_container_width=True):
+    #                 houve_mudanca = False
+    #                 for index, r in df_edit_lid.iterrows():
+    #                     orig_lid = df_lid.loc[index]
+    #                     
+    #                     if (str(orig_lid['nome']) != str(r['nome']) or
+    #                         str(orig_lid.get('descricao', '')) != str(r.get('descricao', '')) or
+    #                         bool(orig_lid['esta_ativo']) != bool(r['esta_ativo'])):
+    #                         
+    #                         houve_mudanca = True
+    #                         p_lid = {
+    #                             "nome": str(r["nome"]), "descricao": str(r.get("descricao", "")), 
+    #                             "esta_ativo": bool(r["esta_ativo"])
+    #                         }
+    #                         supabase.table("criterios_lideranca").update(p_lid).eq("id", r["id"]).execute()
+    #                         
+    #                         if bool(orig_lid['esta_ativo']) != bool(r['esta_ativo']):
+    #                             acao = "Ativou" if r['esta_ativo'] else "Desativou"
+    #                             registrar_auditoria("STATUS CRITÉRIO LIDERANÇA", f"{acao} o critério: '{r['nome']}'", "Geral", usuario_logado)
+    #                         else:
+    #                             registrar_auditoria("EDIÇÃO CRITÉRIO LIDERANÇA", f"Editou o critério: '{r['nome']}'", "Geral", usuario_logado)
+    #                 
+    #                 if houve_mudanca:
+    #                     st.toast("✅ Critérios Atualizados com Sucesso!")
+    #                     time.sleep(1); st.rerun()
+    #                 else:
+    #                     st.info("Nenhuma alteração detectada.")
+    #     except Exception as e:
+    #         st.info(f"Crie o primeiro critério de Liderança acima. (Erro: {e})")
