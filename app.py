@@ -16,8 +16,11 @@ from auditoria import render_auditoria
 from relatorios import render_relatorios 
 from gestao_criterios import render_gestao_criterios 
 from matriz_decisao import render_pdi
-# --- IMPORTS NOVOS AQUI ---
-from avaliacao_lideranca import render_avaliacao_lideranca, render_dashboard_lideranca, obter_ciclo_atual 
+
+# --- COMENTADO: Módulo de Liderança pausado por decisão em reunião ---
+# from avaliacao_lideranca import render_avaliacao_lideranca, render_dashboard_lideranca, obter_ciclo_atual 
+# ---------------------------------------------------------------------
+
 from style import apply_custom_styles
 from database import get_all_records_db, supabase, buscar_contagem_notificacoes, limpar_todas_notificacoes, anular_monitoria_auditada, registrar_auditoria, remover_evidencia_monitoria
 
@@ -303,26 +306,26 @@ def main():
         st.divider()
         
         # ==========================================================
-        # GATILHO INTELIGENTE: AVISO DE AVALIAÇÃO DE LÍDERES ABERTA
+        # COMENTADO: AVISO DE AVALIAÇÃO DE LÍDERES ABERTA
         # ==========================================================
-        ciclo_atual_nome, janela_aberta, _ = obter_ciclo_atual()
-        
-        if janela_aberta:
-            ja_avaliou_neste_ciclo = False
-            try:
-                res_aval = supabase.table("avaliacoes_lideranca").select("id").eq("avaliador_nome", nome_completo).eq("ciclo_avaliacao", ciclo_atual_nome).limit(1).execute()
-                if res_aval.data:
-                    ja_avaliou_neste_ciclo = True
-            except:
-                pass
-                
-            if not ja_avaliou_neste_ciclo:
-                st.markdown(f"""
-                <div style='background-color: #ff4b4b; color: white; padding: 10px; border-radius: 8px; text-align: center; margin-bottom: 15px; animation: pulse-red 2s infinite;'>
-                    <strong>🚨 AVALIAÇÃO ABERTA!</strong><br>
-                    <small>A janela do {ciclo_atual_nome} está liberada. Vá ao menu 'Avaliar Liderança'.</small>
-                </div>
-                """, unsafe_allow_html=True)
+        # ciclo_atual_nome, janela_aberta, _ = obter_ciclo_atual()
+        # 
+        # if janela_aberta:
+        #     ja_avaliou_neste_ciclo = False
+        #     try:
+        #         res_aval = supabase.table("avaliacoes_lideranca").select("id").eq("avaliador_nome", nome_completo).eq("ciclo_avaliacao", ciclo_atual_nome).limit(1).execute()
+        #         if res_aval.data:
+        #             ja_avaliou_neste_ciclo = True
+        #     except:
+        #         pass
+        #         
+        #     if not ja_avaliou_neste_ciclo:
+        #         st.markdown(f"""
+        #         <div style='background-color: #ff4b4b; color: white; padding: 10px; border-radius: 8px; text-align: center; margin-bottom: 15px; animation: pulse-red 2s infinite;'>
+        #             <strong>🚨 AVALIAÇÃO ABERTA!</strong><br>
+        #             <small>A janela do {ciclo_atual_nome} está liberada. Vá ao menu 'Avaliar Liderança'.</small>
+        #         </div>
+        #         """, unsafe_allow_html=True)
         # ==========================================================
         
         st.markdown("**🏢 Visão por Departamento**")
@@ -398,7 +401,7 @@ def main():
             menu("📈 MEUS RESULTADOS", "MEUS_RESULTADOS")
             menu("📚 HISTÓRICO", "HISTORICO")
             menu("🎯 MEU PDI", "PDI")  
-            menu("⬆️ AVALIAR GESTOR", "AVALIAR_LIDERANCA") 
+            # COMENTADO: menu("⬆️ AVALIAR GESTOR", "AVALIAR_LIDERANCA") 
             
         else:
             # MENUS PARA A LIDERANÇA / ADMIN
@@ -414,9 +417,9 @@ def main():
             if nivel in ["ADMIN", "GERENCIA", "GESTAO"]:
                 menu("🎯 MATRIZ DE DECISÃO", "PDI") 
                 
-            # GESTORES TAMBÉM PODEM AVALIAR SEUS SUPERIORES E O ADMIN VÊ O DASHBOARD
-            if nivel in ["ADMIN", "GERENCIA", "GESTAO", "AUDITOR"]:
-                menu("⬆️ AVALIAR LIDERANÇA", "AVALIAR_LIDERANCA")
+            # COMENTADO: GESTORES TAMBÉM PODEM AVALIAR SEUS SUPERIORES E O ADMIN VÊ O DASHBOARD
+            # if nivel in ["ADMIN", "GERENCIA", "GESTAO", "AUDITOR"]:
+            #     menu("⬆️ AVALIAR LIDERANÇA", "AVALIAR_LIDERANCA")
             
             if nivel in ["ADMIN", "AUDITOR"]:
                 menu("⚙️ CONFIG. CRITÉRIOS", "CONFIG_CRITERIOS")
@@ -464,16 +467,16 @@ def main():
             elif p == "CONFIG_CRITERIOS": render_gestao_criterios()
             elif p == "AUDITORIA": render_auditoria()
             elif p == "PDI": render_pdi() 
-            # --- LÓGICA DAS ABAS DA LIDERANÇA AQUI ---
-            elif p == "AVALIAR_LIDERANCA": 
-                aba1, aba2 = st.tabs(["📝 Realizar Avaliação", "📊 Meus Resultados"])
-                with aba1:
-                    render_avaliacao_lideranca()
-                with aba2:
-                    if st.session_state.nivel in ["GESTAO", "GERENCIA", "ADMIN"]:
-                        render_dashboard_lideranca()
-                    else:
-                        st.info("Esta aba é exclusiva para visualização de resultados de gestores.")
+            # --- COMENTADO: LÓGICA DAS ABAS DA LIDERANÇA AQUI ---
+            # elif p == "AVALIAR_LIDERANCA": 
+            #     aba1, aba2 = st.tabs(["📝 Realizar Avaliação", "📊 Meus Resultados"])
+            #     with aba1:
+            #         render_avaliacao_lideranca()
+            #     with aba2:
+            #         if st.session_state.nivel in ["GESTAO", "GERENCIA", "ADMIN"]:
+            #             render_dashboard_lideranca()
+            #         else:
+            #             st.info("Esta aba é exclusiva para visualização de resultados de gestores.")
             # ----------------------------------------
         render_page(page)
     except Exception as e:

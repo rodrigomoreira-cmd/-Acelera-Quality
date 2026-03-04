@@ -192,8 +192,9 @@ def render_pdi():
         if not filtro.empty: 
             aval_atual = filtro.iloc[0]
 
+    # --- ATUALIZADO: Aba "Calibragem da Equipe" removida da lista visual ---
     abas_titulos = ["📊 Dashboard Pessoal", "📝 Preencher Avaliação", "📚 Histórico"]
-    if pode_avaliar: abas_titulos.append("🌐 Calibragem da Equipe")
+    # if pode_avaliar: abas_titulos.append("🌐 Calibragem da Equipe") # <-- COMENTADO
     abas = st.tabs(abas_titulos)
 
     # ABA 1: DASHBOARD
@@ -348,39 +349,41 @@ def render_pdi():
             st.dataframe(df_tabela, use_container_width=True, hide_index=True)
         else: st.info("Sem histórico disponível.")
 
-    # ABA 4: CALIBRAGEM 9-BOX
-    if pode_avaliar:
-        with abas[3]:
-            dados_matriz = []
-            eq_plot = [n for n in df_equipe['nome'].dropna().unique() if nivel_logado == "ADMIN" or n != 'admin@grupoacelerador.com.br']
-            for sdr in eq_plot:
-                b_eq = sdr.strip().upper()
-                t_m, c_m = None, None 
-                if df_mon_bruto is not None and not df_mon_bruto.empty:
-                    df_mon_bruto['criado_em_dt'] = pd.to_datetime(df_mon_bruto['criado_em'], errors='coerce')
-                    df_t_m = df_mon_bruto[(df_mon_bruto['sdr_comp'] == b_eq) & (df_mon_bruto['criado_em_dt'].dt.strftime('%m/%Y') == mes_sel)]
-                    if not df_t_m.empty: 
-                        t_val = pd.to_numeric(df_t_m['nota'], errors='coerce').mean()
-                        if pd.notna(t_val): t_m = round(t_val, 1)
-
-                if df_comp_bruto is not None and not df_comp_bruto.empty:
-                    df_c_m = df_comp_bruto[(df_comp_bruto['sdr_nome_comp'] == b_eq) & (df_comp_bruto['mes_referencia'] == mes_sel)]
-                    if not df_c_m.empty: 
-                        c_val = float(df_c_m.iloc[0]['media_comportamental'])
-                        c_m = round((c_val / 5.0) * 100, 1)
-
-                if t_m is not None and c_m is not None:
-                    q = "⭐ Talento" if t_m >= 85 and c_m >= 80 else ("🧩 Especialista" if t_m >= 85 else ("🔥 Alto Potencial" if c_m >= 80 else "⚠️ Alerta"))
-                    dados_matriz.append({"Colaborador": sdr, "Técnica (%)": t_m, "Comportamento (%)": c_m, "Quadrante": q})
-            
-            if dados_matriz:
-                df_m_plot = pd.DataFrame(dados_matriz)
-                fig = px.scatter(df_m_plot, x="Comportamento (%)", y="Técnica (%)", text="Colaborador", color="Quadrante", color_discrete_map={"⭐ Talento": "#00cc96", "🧩 Especialista": "#ffa500", "🔥 Alto Potencial": "#1f77b4", "⚠️ Alerta": "#ff4b4b"}, range_x=[-5, 105], range_y=[-5, 105], hover_data={"Colaborador": True, "Quadrante": True, "Comportamento (%)": ':.1f', "Técnica (%)": ':.1f'})
-                fig.update_traces(textposition="top center", hovertemplate="<b>%{customdata[0]}</b><br>Quadrante: %{customdata[1]}<br>Técnica: %{y}%<br>Comportamental: %{x}%<extra></extra>")
-                fig.update_layout(shapes=[dict(type="rect", x0=0, y0=0, x1=80, y1=85, fillcolor="#ff4b4b", opacity=0.1, layer="below", line_width=0), dict(type="rect", x0=0, y0=85, x1=80, y1=100, fillcolor="#ffa500", opacity=0.1, layer="below", line_width=0), dict(type="rect", x0=80, y0=0, x1=100, y1=85, fillcolor="#1f77b4", opacity=0.1, layer="below", line_width=0), dict(type="rect", x0=80, y0=85, x1=100, y1=100, fillcolor="#00cc96", opacity=0.1, layer="below", line_width=0)], paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color="white"))
-                st.plotly_chart(fig, use_container_width=True)
-                df_m_tabela = df_m_plot.copy()
-                df_m_tabela['Técnica (%)'] = df_m_tabela['Técnica (%)'].apply(lambda x: f"{x}%")
-                df_m_tabela['Comportamento (%)'] = df_m_tabela['Comportamento (%)'].apply(lambda x: f"{x}%")
-                st.dataframe(df_m_tabela, use_container_width=True, hide_index=True)
-            else: st.info("Sem dados para calibragem no mês.")
+    # ==========================================================
+    # ABA 4: CALIBRAGEM 9-BOX (COMENTADA)
+    # ==========================================================
+    # if pode_avaliar:
+    #     with abas[3]:
+    #         dados_matriz = []
+    #         eq_plot = [n for n in df_equipe['nome'].dropna().unique() if nivel_logado == "ADMIN" or n != 'admin@grupoacelerador.com.br']
+    #         for sdr in eq_plot:
+    #             b_eq = sdr.strip().upper()
+    #             t_m, c_m = None, None 
+    #             if df_mon_bruto is not None and not df_mon_bruto.empty:
+    #                 df_mon_bruto['criado_em_dt'] = pd.to_datetime(df_mon_bruto['criado_em'], errors='coerce')
+    #                 df_t_m = df_mon_bruto[(df_mon_bruto['sdr_comp'] == b_eq) & (df_mon_bruto['criado_em_dt'].dt.strftime('%m/%Y') == mes_sel)]
+    #                 if not df_t_m.empty: 
+    #                     t_val = pd.to_numeric(df_t_m['nota'], errors='coerce').mean()
+    #                     if pd.notna(t_val): t_m = round(t_val, 1)
+    # 
+    #             if df_comp_bruto is not None and not df_comp_bruto.empty:
+    #                 df_c_m = df_comp_bruto[(df_comp_bruto['sdr_nome_comp'] == b_eq) & (df_comp_bruto['mes_referencia'] == mes_sel)]
+    #                 if not df_c_m.empty: 
+    #                     c_val = float(df_c_m.iloc[0]['media_comportamental'])
+    #                     c_m = round((c_val / 5.0) * 100, 1)
+    # 
+    #             if t_m is not None and c_m is not None:
+    #                 q = "⭐ Talento" if t_m >= 85 and c_m >= 80 else ("🧩 Especialista" if t_m >= 85 else ("🔥 Alto Potencial" if c_m >= 80 else "⚠️ Alerta"))
+    #                 dados_matriz.append({"Colaborador": sdr, "Técnica (%)": t_m, "Comportamento (%)": c_m, "Quadrante": q})
+    #         
+    #         if dados_matriz:
+    #             df_m_plot = pd.DataFrame(dados_matriz)
+    #             fig = px.scatter(df_m_plot, x="Comportamento (%)", y="Técnica (%)", text="Colaborador", color="Quadrante", color_discrete_map={"⭐ Talento": "#00cc96", "🧩 Especialista": "#ffa500", "🔥 Alto Potencial": "#1f77b4", "⚠️ Alerta": "#ff4b4b"}, range_x=[-5, 105], range_y=[-5, 105], hover_data={"Colaborador": True, "Quadrante": True, "Comportamento (%)": ':.1f', "Técnica (%)": ':.1f'})
+    #             fig.update_traces(textposition="top center", hovertemplate="<b>%{customdata[0]}</b><br>Quadrante: %{customdata[1]}<br>Técnica: %{y}%<br>Comportamental: %{x}%<extra></extra>")
+    #             fig.update_layout(shapes=[dict(type="rect", x0=0, y0=0, x1=80, y1=85, fillcolor="#ff4b4b", opacity=0.1, layer="below", line_width=0), dict(type="rect", x0=0, y0=85, x1=80, y1=100, fillcolor="#ffa500", opacity=0.1, layer="below", line_width=0), dict(type="rect", x0=80, y0=0, x1=100, y1=85, fillcolor="#1f77b4", opacity=0.1, layer="below", line_width=0), dict(type="rect", x0=80, y0=85, x1=100, y1=100, fillcolor="#00cc96", opacity=0.1, layer="below", line_width=0)], paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color="white"))
+    #             st.plotly_chart(fig, use_container_width=True)
+    #             df_m_tabela = df_m_plot.copy()
+    #             df_m_tabela['Técnica (%)'] = df_m_tabela['Técnica (%)'].apply(lambda x: f"{x}%")
+    #             df_m_tabela['Comportamento (%)'] = df_m_tabela['Comportamento (%)'].apply(lambda x: f"{x}%")
+    #             st.dataframe(df_m_tabela, use_container_width=True, hide_index=True)
+    #         else: st.info("Sem dados para calibragem no mês.")
