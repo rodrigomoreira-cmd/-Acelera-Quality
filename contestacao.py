@@ -10,6 +10,12 @@ from analise_ia import analisar_sentimento_texto
 # -------------------------
 
 def render_contestacao():
+    # --- CORREÇÃO PYLANCE: Garante que o supabase existe ---
+    if supabase is None:
+        st.error("Erro de conexão com o banco de dados.")
+        return
+    # -------------------------------------------------------
+
     nivel = st.session_state.get('nivel', 'USUARIO')
     nome_completo = st.session_state.get('user_nome', '')
     dept_selecionado = st.session_state.get('departamento_selecionado', 'Todos')
@@ -105,7 +111,7 @@ def render_contestacao():
 
                     try:
                         res_aud = supabase.table("usuarios").select("foto_url").eq("nome", auditor_nome).execute()
-                        foto_auditor = res_aud.data[0].get('foto_url') if res_aud.data else None
+                        foto_auditor = res_aud.data[0].get('foto_url') if res_aud.data else None  # type: ignore
                     except:
                         foto_auditor = None
 
@@ -163,10 +169,8 @@ def render_contestacao():
                                 st.warning("⚠️ Escreva uma justificativa clara (mínimo de 10 caracteres).")
                             else:
                                 try:
-                                    # --- CHAMADA DA INTELIGÊNCIA ARTIFICIAL ---
                                     with st.spinner("🤖 Processando contestação com IA..."):
                                         sent_ia, res_ia = analisar_sentimento_texto(motivo_sdr)
-                                    # ------------------------------------------
 
                                     payload = {
                                         "monitoria_id": id_sel,
@@ -174,16 +178,14 @@ def render_contestacao():
                                         "status": "Pendente",
                                         "resposta_admin": "",
                                         "visualizada": False,
-                                        "sentimento_ia": sent_ia,  # Salvando a Tag da IA
-                                        "resumo_ia": res_ia        # Salvando o Resumo da IA
+                                        "sentimento_ia": sent_ia,  
+                                        "resumo_ia": res_ia,       
+                                        "sdr_nome": nome_completo  
                                     }
-                                    coluna_nome_bd = 'sdr_nome' if df_contestacoes is not None and 'sdr_nome' in df_contestacoes.columns else 'sdr'
-                                    payload[coluna_nome_bd] = nome_completo
                                         
                                     supabase.table("contestacoes").insert(payload).execute()
                                     registrar_auditoria("ABERTURA DE CONTESTAÇÃO", f"Abriu contestação para a avaliação de {auditor_nome}.", nome_completo)
                                     
-                                    # 🔔 GATILHO: AVISA O AUDITOR QUE ELE FOI CONTESTADO
                                     try:
                                         supabase.table("notificacoes").insert({
                                             "usuario": auditor_nome, 
@@ -280,7 +282,6 @@ def render_contestacao():
                     else:
                         data_formatada = "Data N/D"
 
-                    # --- PEGANDO OS DADOS DA IA PARA MOSTRAR AO GESTOR ---
                     tag_ia = row.get('sentimento_ia', '🤖 Sem IA')
                     if pd.isna(tag_ia): tag_ia = '🤖 Sem IA'
                     resumo_ia = row.get('resumo_ia', '')
@@ -292,7 +293,6 @@ def render_contestacao():
                             st.markdown("**Defesa do Colaborador:**")
                             st.info(f"*{row['motivo']}*")
                             
-                            # Exibe o resumo gerado pela IA se existir
                             if pd.notna(resumo_ia) and resumo_ia != "":
                                 st.markdown(f"**🧠 Resumo da IA ({tag_ia}):**")
                                 st.caption(f"_{resumo_ia}_")
@@ -316,8 +316,17 @@ def render_contestacao():
 
                         st.divider()
                         with st.form(f"form_veredito_{id_cont_limpo}"):
-                            decisao = st.radio("Resultado da Análise:", ["Aceita", "Recusada"], horizontal=True)
-                            feedback = st.text_area("Feedback oficial para o colaborador:", height=100)
+                            decisao = st.radio(
+                                "Resultado da Análise:", 
+                                ["Aceita", "Recusada"], 
+                                horizontal=True, 
+                                key=f"decisao_{id_cont_limpo}"
+                            )
+                            feedback = st.text_area(
+                                "Feedback oficial para o colaborador:", 
+                                height=100, 
+                                key=f"feedback_{id_cont_limpo}"
+                            )
                             
                             if st.form_submit_button("⚖️ Salvar Decisão", type="primary", use_container_width=True):
                                 try:
@@ -328,18 +337,13 @@ def render_contestacao():
                                     
                                     registrar_auditoria("JULGAMENTO DE CONTESTAÇÃO", f"A contestação de {nome_colaborador} foi julgada como '{decisao}'.", nome_colaborador)
 
-                                    # ==========================================================
-                                    # 🔔 GATILHOS DE COMUNICAÇÃO (AVISA O SDR)
-                                    # ==========================================================
                                     try:
-                                        # 1. Avisa o SDR que houve um resultado
                                         supabase.table("notificacoes").insert({
                                             "usuario": nome_colaborador,
                                             "mensagem": f"⚖️ Sua contestação foi avaliada como: {decisao}. Acesse a Central de Contestações para ler o feedback.",
                                             "lida": False
                                         }).execute()
 
-                                        # 2. Gatilho de Gamificação (Medalha Advogado de Defesa)
                                         if decisao == "Aceita":
                                             msg_advogado = "🎖️ PARABÉNS! Sua contestação foi aceita. Você provou seu ponto e desbloqueou a medalha Advogado de Defesa!"
                                             supabase.table("notificacoes").insert({
