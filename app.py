@@ -3,6 +3,7 @@ import pandas as pd
 import time
 from datetime import datetime, timedelta
 import os
+import base64
 
 from auth import render_login
 from dashboard import render_dashboard
@@ -32,6 +33,39 @@ from database import (
     registrar_auditoria,
     remover_evidencia_monitoria,
 )
+
+
+# ==========================================================
+# 🔔 FUNÇÃO DE ÁUDIO INVISÍVEL (SINAL SONORO ESTILO IPHONE)
+# ==========================================================
+def tocar_som_notificacao():
+    """Lê o arquivo local de áudio e injeta um player invisível na tela"""
+
+    # Procura o som do iPhone na sua pasta assets
+    caminho_som = "assets/iphone.mp3"
+
+    try:
+        if os.path.exists(caminho_som):
+            # Transforma o MP3 local num código base64 para tocar direto no navegador
+            with open(caminho_som, "rb") as f:
+                data = f.read()
+                b64 = base64.b64encode(data).decode()
+                som_src = f"data:audio/mp3;base64,{b64}"
+        else:
+            # Som de backup (estilo smartphone) caso o arquivo iphone.mp3 não seja encontrado
+            som_src = (
+                "https://assets.mixkit.co/active_storage/sfx/2866/2866-preview.mp3"
+            )
+
+        html_som = f"""
+            <audio autoplay style="display:none;">
+                <source src="{som_src}" type="audio/mp3">
+            </audio>
+        """
+        st.markdown(html_som, unsafe_allow_html=True)
+
+    except Exception as e:
+        print(f"Erro ao tentar tocar o som: {e}")
 
 
 # ==========================================================
@@ -347,11 +381,15 @@ def render_sininho_live(nome_completo, nivel):
     res_n = buscar_contagem_notificacoes(nome_completo, nivel)
     qtd = int(res_n if res_n else 0)
 
-    # 2. Compara se chegou notificação nova para soltar aviso visual
+    # 2. Compara se chegou notificação nova para soltar aviso visual e sonoro
     if "ultima_qtd_notif" not in st.session_state:
         st.session_state.ultima_qtd_notif = qtd
     elif qtd > st.session_state.ultima_qtd_notif:
         st.toast("🔔 Você recebeu uma nova mensagem ou avaliação!", icon="✨")
+
+        # 🎵 DISPARA O SOM DO SININHO AQUI!
+        tocar_som_notificacao()
+
         st.session_state.ultima_qtd_notif = qtd
     elif qtd < st.session_state.ultima_qtd_notif:
         st.session_state.ultima_qtd_notif = qtd
