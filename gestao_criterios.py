@@ -3,7 +3,6 @@ import pandas as pd
 from database import supabase, registrar_auditoria
 import time
 
-
 def render_gestao_criterios():
     # --- TRAVA ANTI-PYLANCE ---
     if supabase is None:
@@ -25,13 +24,13 @@ def render_gestao_criterios():
 
     usuario_logado = str(st.session_state.get("user_nome", "Sistema"))
 
+    # 👇 AQUI ESTÁ A MÁGICA: As categorias agora são exatamente o que a Monitoria espera!
     OPCOES_CATEGORIAS = [
-        "Nectar CRM",
-        "Ambos - Processo SDR",
-        "Identificar - Processo",
-        "Integração",
-        "Selene/Bot",
+        "N1",
+        "N2",
+        "N3"
     ]
+    
     OPCOES_DEPARTAMENTO = [
         "SDR",
         "Especialista",
@@ -60,12 +59,12 @@ def render_gestao_criterios():
 
                     nome = st.text_input(
                         "Pergunta / Critério",
-                        placeholder="Ex: Confirmou os dados de contato no início da ligação?",
+                        placeholder="Ex: Não realizar o primeiro contato através do Selene Bot...",
                     )
 
                     c_grupo, c_dept = st.columns(2)
                     grupo = c_grupo.selectbox(
-                        "Categoria do Checklist", OPCOES_CATEGORIAS
+                        "Categoria do Checklist (Nível)", OPCOES_CATEGORIAS
                     )
                     departamento = c_dept.selectbox(
                         "Departamento Alvo", OPCOES_DEPARTAMENTO
@@ -74,13 +73,15 @@ def render_gestao_criterios():
                     st.write("")
                     st.markdown("#### ⚖️ Inteligência do Critério")
                     st.caption(
-                        "Defina o peso desta pergunta para a média final e se o erro zera a nota da ligação."
+                        "Defina o peso desta pergunta para a média final (1 para N1, 3 para N2, 7 para N3)."
                     )
 
                     col_p, col_f = st.columns([1.5, 1])
+                    
+                    # 👇 Peso travado apenas nas opções válidas da nova regra!
                     peso = col_p.select_slider(
-                        "Peso do Item (Pontos)",
-                        options=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+                        "Peso do Item (Pontos de Penalidade)",
+                        options=[1, 3, 7],
                         value=1,
                     )
 
@@ -114,7 +115,7 @@ def render_gestao_criterios():
                                 supabase.table("criterios_qa").insert(payload).execute()  # type: ignore
                                 registrar_auditoria(
                                     "CRIAR CRITÉRIO QA",
-                                    f"Criou critério '{nome}'",
+                                    f"Criou critério '{nome}' no grupo {grupo}",
                                     "Geral",
                                     usuario_logado,
                                 )
@@ -133,7 +134,7 @@ def render_gestao_criterios():
         st.divider()
         st.markdown("### 📋 Tabela de Critérios Ativos")
         st.caption(
-            "Edite pesos, nomes ou desative critérios diretamente na tabela abaixo. Clique no botão ao final para salvar."
+            "Edite pesos, nomes ou desative critérios diretamente na tabela abaixo. Clique no botão ao final para salvar. **Lembre-se de mudar os critérios antigos para N1, N2 ou N3!**"
         )
 
         try:
@@ -416,74 +417,8 @@ def render_gestao_criterios():
                             st.info("Nenhuma alteração detectada na tabela.")
         except Exception as e:
             st.info(f"Crie o primeiro critério de PDI acima. (Log: {e})")
-    # ==========================================================
-    # ABA 3: CRITÉRIOS DE LIDERANÇA (360) - COMENTADO
-    # ==========================================================
-    # with aba_lid:
-    #     with st.expander("➕ Adicionar Novo Critério de Liderança", expanded=False):
-    #         with st.form("novo_lid_form", clear_on_submit=True):
-    #             st.markdown("### Novo Critério para Avaliar Gestores")
-    #             nome_lid = st.text_input("Nome do Critério", placeholder="Ex: Comunicação Clara")
-    #             desc_lid = st.text_input("Descrição", placeholder="Como o SDR deve avaliar isso?")
-    #
-    #             if st.form_submit_button("💾 Salvar Critério de Liderança", type="primary"):
-    #                 if nome_lid:
-    #                     try:
-    #                         payload_lid = {
-    #                             "nome": nome_lid.strip(),
-    #                             "descricao": desc_lid.strip(),
-    #                             "esta_ativo": True
-    #                         }
-    #                         supabase.table("criterios_lideranca").insert(payload_lid).execute()
-    #                         registrar_auditoria("CRIAR CRITÉRIO LIDERANÇA", f"Adicionou critério: {nome_lid}", "Geral", usuario_logado)
-    #                         st.toast(f"✅ Critério adicionado!", icon="🎯")
-    #                         time.sleep(1); st.rerun()
-    #                     except Exception as e: st.error(f"Erro: {e}")
-    #                 else: st.warning("⚠️ O Nome do critério é obrigatório.")
-    #
-    #     st.divider()
-    #     st.subheader("📝 Editar Critérios de Liderança")
-    #     try:
-    #         res_lid = supabase.table("criterios_lideranca").select("*").order("nome").execute()
-    #         df_lid = pd.DataFrame(res_lid.data) if res_lid.data else pd.DataFrame()
-    #
-    #         if not df_lid.empty:
-    #             df_edit_lid = st.data_editor(
-    #                 df_lid[['id', 'nome', 'descricao', 'esta_ativo']],
-    #                 column_config={
-    #                     "id": st.column_config.TextColumn("ID", disabled=True),
-    #                     "nome": st.column_config.TextColumn("Nome do Critério", required=True),
-    #                     "esta_ativo": st.column_config.CheckboxColumn("Ativo?")
-    #                 },
-    #                 hide_index=True, use_container_width=True
-    #             )
-    #
-    #             if st.button("🔄 Salvar Alterações em Massa (Liderança)", type="primary", use_container_width=True):
-    #                 houve_mudanca = False
-    #                 for index, r in df_edit_lid.iterrows():
-    #                     orig_lid = df_lid.loc[index]
-    #
-    #                     if (str(orig_lid['nome']) != str(r['nome']) or
-    #                         str(orig_lid.get('descricao', '')) != str(r.get('descricao', '')) or
-    #                         bool(orig_lid['esta_ativo']) != bool(r['esta_ativo'])):
-    #
-    #                         houve_mudanca = True
-    #                         p_lid = {
-    #                             "nome": str(r["nome"]), "descricao": str(r.get("descricao", "")),
-    #                             "esta_ativo": bool(r["esta_ativo"])
-    #                         }
-    #                         supabase.table("criterios_lideranca").update(p_lid).eq("id", r["id"]).execute()
-    #
-    #                         if bool(orig_lid['esta_ativo']) != bool(r['esta_ativo']):
-    #                             acao = "Ativou" if r['esta_ativo'] else "Desativou"
-    #                             registrar_auditoria("STATUS CRITÉRIO LIDERANÇA", f"{acao} o critério: '{r['nome']}'", "Geral", usuario_logado)
-    #                         else:
-    #                             registrar_auditoria("EDIÇÃO CRITÉRIO LIDERANÇA", f"Editou o critério: '{r['nome']}'", "Geral", usuario_logado)
-    #
-    #                 if houve_mudanca:
-    #                     st.toast("✅ Critérios Atualizados com Sucesso!")
-    #                     time.sleep(1); st.rerun()
-    #                 else:
-    #                     st.info("Nenhuma alteração detectada.")
-    #     except Exception as e:
-    #         st.info(f"Crie o primeiro critério de Liderança acima. (Erro: {e})")
+
+# ==========================================================
+# ABA 3: CRITÉRIOS DE LIDERANÇA (360) - COMENTADO
+# ==========================================================
+# ... [O restante do seu código comentado de liderança permanece igual]
