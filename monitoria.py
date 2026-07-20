@@ -59,15 +59,14 @@ def buscar_criterios_dinamicos():
             n1, n2, n3 = [], [], []
             
             for _, row in df_crit.iterrows():
-                # 1. Verifica se está ativo de forma robusta (aceita booleano True ou texto 'true')
+                # 1. Verifica se está ativo
                 ativo = str(row.get("esta_ativo", "True")).strip().lower()
                 if ativo not in ['true', '1', 't', 'yes', 'sim']:
-                    continue # Se estiver desativado, pula!
+                    continue 
                     
-                # 2. Pega o texto (compara 'nome' e 'descricao' e usa o mais longo)
+                # 2. Pega o texto
                 texto_nome = str(row.get("nome", "")).strip()
                 texto_desc = str(row.get("descricao", "")).strip()
-                
                 texto_final = texto_desc if len(texto_desc) > len(texto_nome) else texto_nome
                     
                 if not texto_final or texto_final.lower() == "nan":
@@ -75,31 +74,35 @@ def buscar_criterios_dinamicos():
                     
                 # 3. Lê grupo e peso
                 grupo = str(row.get("grupo", "")).strip().upper()
-                
                 try:
-                    peso_val = float(row.get("peso", 0)) # Transforma em número real para evitar erros de texto
+                    peso_val = float(row.get("peso", 0))
                 except:
                     peso_val = 0
                 
-                # 4. Distribui o critério pela aba correta
-                if "N1" in grupo or peso_val == 1:
+                # 👇 AQUI ESTÁ A CORREÇÃO: Prioridade total para o Grupo!
+                # O sistema agora ignora o "peso" se o grupo N1, N2 ou N3 estiver preenchido.
+                if "N1" in grupo:
                     n1.append(texto_final)
-                elif "N2" in grupo or peso_val == 3:
+                elif "N2" in grupo:
                     n2.append(texto_final)
-                elif "N3" in grupo or peso_val == 7:
+                elif "N3" in grupo:
+                    n3.append(texto_final)
+                # Plano B: Só usa o peso se o campo grupo estiver vazio por algum motivo
+                elif peso_val == 1:
+                    n1.append(texto_final)
+                elif peso_val == 3:
+                    n2.append(texto_final)
+                elif peso_val == 7:
                     n3.append(texto_final)
                     
-            # Se conseguiu carregar pelo menos uma pergunta, retorna as listas oficiais!
             if n1 or n2 or n3:
                 return n1, n2, n3
                 
     except Exception as e:
         print(f"Erro ao ler os critérios do banco: {e}")
         
-    # Se algo falhar gravemente, avisa no terminal e usa o Backup
     print("Usando critérios de backup!")
     return CRITERIOS_N1_BACKUP, CRITERIOS_N2_BACKUP, CRITERIOS_N3_BACKUP
-
 # ==========================================================
 # 🖥️ RENDERIZAÇÃO DA TELA DE MONITORIA
 # ==========================================================
