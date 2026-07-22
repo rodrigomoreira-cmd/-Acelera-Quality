@@ -24,12 +24,8 @@ def render_gestao_criterios():
 
     usuario_logado = str(st.session_state.get("user_nome", "Sistema"))
 
-    # 👇 AQUI ESTÁ A MÁGICA: As categorias agora são exatamente o que a Monitoria espera!
-    OPCOES_CATEGORIAS = [
-        "N1",
-        "N2",
-        "N3"
-    ]
+    # Categorias alinhadas com a Monitoria
+    OPCOES_CATEGORIAS = ["N1", "N2", "N3"]
     
     OPCOES_DEPARTAMENTO = [
         "SDR",
@@ -40,7 +36,7 @@ def render_gestao_criterios():
     ]
 
     # ==========================================================
-    # MODIFICADO: A TERCEIRA ABA (LIDERANÇA) FOI COMENTADA
+    # SISTEMA DE ABAS
     # ==========================================================
     aba_qa, aba_pdi = st.tabs(["🎧 Critérios de Qualidade (QA)", "🎯 Competências PDI"])
 
@@ -78,14 +74,14 @@ def render_gestao_criterios():
 
                     col_p, col_f = st.columns([1.5, 1])
                     
-                    # 👇 Peso travado apenas nas opções válidas da nova regra!
+                    # Peso travado na criação
                     peso = col_p.select_slider(
                         "Peso do Item (Pontos de Penalidade)",
                         options=[1, 3, 7],
                         value=1,
                     )
 
-                    col_f.write("")  # Espaçamento para alinhar com o slider
+                    col_f.write("")  
                     col_f.write("")
                     eh_fatal = col_f.toggle("🚨 Marcar como ITEM FATAL")
 
@@ -112,7 +108,7 @@ def render_gestao_criterios():
                                     "eh_fatal": bool(eh_fatal),
                                     "esta_ativo": True,
                                 }
-                                supabase.table("criterios_qa").insert(payload).execute()  # type: ignore
+                                supabase.table("criterios_qa").insert(payload).execute()
                                 registrar_auditoria(
                                     "CRIAR CRITÉRIO QA",
                                     f"Criou critério '{nome}' no grupo {grupo}",
@@ -134,11 +130,11 @@ def render_gestao_criterios():
         st.divider()
         st.markdown("### 📋 Tabela de Critérios Ativos")
         st.caption(
-            "Edite pesos, nomes ou desative critérios diretamente na tabela abaixo. Clique no botão ao final para salvar. **Lembre-se de mudar os critérios antigos para N1, N2 ou N3!**"
+            "Edite pesos, nomes ou desative critérios diretamente na tabela abaixo. Clique no botão ao final para salvar."
         )
 
         try:
-            res = supabase.table("criterios_qa").select("*").order("grupo", desc=False).execute()  # type: ignore
+            res = supabase.table("criterios_qa").select("*").order("grupo", desc=False).execute()
             df = (
                 pd.DataFrame(res.data)
                 if hasattr(res, "data") and res.data
@@ -149,7 +145,6 @@ def render_gestao_criterios():
             df = pd.DataFrame()
 
         if not df.empty:
-            # Garante tipos corretos para não dar warning no editor
             df["peso"] = (
                 pd.to_numeric(df["peso"], errors="coerce").fillna(1).astype(int)
             )
@@ -176,8 +171,9 @@ def render_gestao_criterios():
                     "nome": st.column_config.TextColumn(
                         "Critério / Pergunta", width="large", required=True
                     ),
-                    "peso": st.column_config.NumberColumn(
-                        "Peso", min_value=1, max_value=10, step=1
+                    # 👇 CORREÇÃO AQUI: Bloqueando a edição do peso em massa apenas para 1, 3 e 7
+                    "peso": st.column_config.SelectboxColumn(
+                        "Peso", options=[1, 3, 7], required=True
                     ),
                     "eh_fatal": st.column_config.CheckboxColumn("🚨 Fatal?"),
                     "esta_ativo": st.column_config.CheckboxColumn("Ativo?"),
@@ -201,13 +197,12 @@ def render_gestao_criterios():
                     try:
                         houve_mudanca = False
                         for index, row in df_editado.iterrows():
-                            # Se for uma linha nova inserida direto no editor (id is NaN)
+                            # Proteção contra linhas vazias criadas direto na tabela
                             if pd.isna(row.get("id")):
-                                continue  # Ignoramos inserções direto na tabela por segurança, obrigando uso do form superior.
+                                continue  
 
-                            orig = df.loc[index]  # type: ignore
+                            orig = df.loc[index]
 
-                            # Comparações seguras de tipo
                             if (
                                 str(orig["nome"]) != str(row["nome"])
                                 or str(orig["grupo"]) != str(row["grupo"])
@@ -216,7 +211,6 @@ def render_gestao_criterios():
                                 or bool(orig["esta_ativo"]) != bool(row["esta_ativo"])
                                 or str(orig["departamento"]) != str(row["departamento"])
                             ):
-
                                 houve_mudanca = True
                                 upd_payload = {
                                     "nome": str(row["nome"]),
@@ -226,12 +220,10 @@ def render_gestao_criterios():
                                     "esta_ativo": bool(row["esta_ativo"]),
                                     "departamento": str(row["departamento"]),
                                 }
-                                supabase.table("criterios_qa").update(upd_payload).eq("id", row["id"]).execute()  # type: ignore
+                                supabase.table("criterios_qa").update(upd_payload).eq("id", row["id"]).execute()
 
                                 if bool(orig["esta_ativo"]) != bool(row["esta_ativo"]):
-                                    acao = (
-                                        "Ativou" if row["esta_ativo"] else "Desativou"
-                                    )
+                                    acao = "Ativou" if row["esta_ativo"] else "Desativou"
                                     registrar_auditoria(
                                         "STATUS CRITÉRIO QA",
                                         f"{acao} o critério: '{row['nome']}'",
@@ -247,9 +239,7 @@ def render_gestao_criterios():
                                     )
 
                         if houve_mudanca:
-                            st.success(
-                                "✅ Base de critérios de qualidade atualizada com sucesso!"
-                            )
+                            st.success("✅ Base de critérios de qualidade atualizada com sucesso!")
                             time.sleep(1)
                             st.rerun()
                         else:
@@ -303,7 +293,7 @@ def render_gestao_criterios():
                                     "departamento": str(dept_pdi),
                                     "esta_ativo": True,
                                 }
-                                supabase.table("criterios_comportamentais").insert(payload_pdi).execute()  # type: ignore
+                                supabase.table("criterios_comportamentais").insert(payload_pdi).execute()
                                 registrar_auditoria(
                                     "CRIAR CRITÉRIO PDI",
                                     f"Adicionou Skill: {nome_pdi}",
@@ -325,7 +315,7 @@ def render_gestao_criterios():
         )
 
         try:
-            res_comp = supabase.table("criterios_comportamentais").select("*").order("nome").execute()  # type: ignore
+            res_comp = supabase.table("criterios_comportamentais").select("*").order("nome").execute()
             df_comp = (
                 pd.DataFrame(res_comp.data)
                 if hasattr(res_comp, "data") and res_comp.data
@@ -370,16 +360,13 @@ def render_gestao_criterios():
                             if pd.isna(r.get("id")):
                                 continue
 
-                            orig_pdi = df_comp.loc[index]  # type: ignore
+                            orig_pdi = df_comp.loc[index]
                             if (
                                 str(orig_pdi["nome"]) != str(r["nome"])
-                                or str(orig_pdi.get("descricao", ""))
-                                != str(r.get("descricao", ""))
-                                or str(orig_pdi.get("departamento", "Todos"))
-                                != str(r.get("departamento", "Todos"))
+                                or str(orig_pdi.get("descricao", "")) != str(r.get("descricao", ""))
+                                or str(orig_pdi.get("departamento", "Todos")) != str(r.get("departamento", "Todos"))
                                 or bool(orig_pdi["esta_ativo"]) != bool(r["esta_ativo"])
                             ):
-
                                 houve_mudanca = True
                                 p_pdi = {
                                     "nome": str(r["nome"]),
@@ -387,11 +374,9 @@ def render_gestao_criterios():
                                     "departamento": str(r.get("departamento", "Todos")),
                                     "esta_ativo": bool(r["esta_ativo"]),
                                 }
-                                supabase.table("criterios_comportamentais").update(p_pdi).eq("id", r["id"]).execute()  # type: ignore
+                                supabase.table("criterios_comportamentais").update(p_pdi).eq("id", r["id"]).execute()
 
-                                if bool(orig_pdi["esta_ativo"]) != bool(
-                                    r["esta_ativo"]
-                                ):
+                                if bool(orig_pdi["esta_ativo"]) != bool(r["esta_ativo"]):
                                     acao = "Ativou" if r["esta_ativo"] else "Desativou"
                                     registrar_auditoria(
                                         "STATUS CRITÉRIO PDI",
@@ -408,17 +393,10 @@ def render_gestao_criterios():
                                     )
 
                         if houve_mudanca:
-                            st.success(
-                                "✅ Matriz de Desenvolvimento (PDI) atualizada com sucesso!"
-                            )
+                            st.success("✅ Matriz de Desenvolvimento (PDI) atualizada com sucesso!")
                             time.sleep(1)
                             st.rerun()
                         else:
                             st.info("Nenhuma alteração detectada na tabela.")
         except Exception as e:
             st.info(f"Crie o primeiro critério de PDI acima. (Log: {e})")
-
-# ==========================================================
-# ABA 3: CRITÉRIOS DE LIDERANÇA (360) - COMENTADO
-# ==========================================================
-# ... [O restante do seu código comentado de liderança permanece igual]

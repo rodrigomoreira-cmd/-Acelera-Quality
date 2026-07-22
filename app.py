@@ -17,6 +17,7 @@ from auditoria import render_auditoria
 from relatorios import render_relatorios
 from gestao_criterios import render_gestao_criterios
 from matriz_decisao import render_pdi
+from historico_monitorias import render_historico_monitorias
 
 # --- COMENTADO: Módulo de Liderança pausado por decisão em reunião ---
 # from avaliacao_lideranca import render_avaliacao_lideranca, render_dashboard_lideranca, obter_ciclo_atual
@@ -99,9 +100,8 @@ def modal_anular(id_mon, sdr_nome):
     if col_b.button("Cancelar", use_container_width=True):
         st.rerun()
 
-
 # ==========================================================
-# HISTÓRICO GERAL ATUALIZADO (COM FILTROS AVANÇADOS)
+# HISTÓRICO GERAL ATUALIZADO (COM COLUNA DE FEEDBACK)
 # ==========================================================
 def render_historico_geral(nivel, nome_completo):
     dept_selecionado = str(st.session_state.get("departamento_selecionado", "Todos"))
@@ -147,6 +147,19 @@ def render_historico_geral(nivel, nome_completo):
         df_exibicao = df_monitorias.copy()
         df_exibicao["Situação"] = "Nenhuma"
 
+    # 👇 NOVA MÁGICA: CRIANDO A COLUNA "FB REALIZADO"
+    def verificar_fb(valor):
+        val_str = str(valor).strip().lower()
+        # Se for vazio, nulo, NaN ou None, retorna Não
+        if val_str in ["", "nan", "none", "null"] or pd.isna(valor):
+            return "❌ Não"
+        return "✅ Sim"
+        
+    if "resposta_gestor" in df_exibicao.columns:
+        df_exibicao["Fb Realizado"] = df_exibicao["resposta_gestor"].apply(verificar_fb)
+    else:
+        df_exibicao["Fb Realizado"] = "❌ Não"
+
     if dept_selecionado != "Todos" and "departamento" in df_exibicao.columns:
         df_exibicao = df_exibicao[
             df_exibicao["departamento"].astype(str).str.strip().str.upper()
@@ -175,7 +188,8 @@ def render_historico_geral(nivel, nome_completo):
     # --- SEÇÃO DE FILTROS AVANÇADOS PARA LIDERANÇA ---
     if nivel in ["ADMIN", "GESTAO", "AUDITOR", "GERENCIA"]:
         with st.expander("🔎 Filtros Avançados", expanded=True):
-            col1, col2, col3, col4 = st.columns(4)
+            # Transformei em 5 colunas para o novo filtro de Feedback
+            col1, col2, col3, col4, col5 = st.columns(5)
 
             lista_sdrs = ["Todos"] + sorted(
                 df_exibicao["sdr"].dropna().unique().tolist()
@@ -190,11 +204,15 @@ def render_historico_geral(nivel, nome_completo):
             lista_situacoes = ["Todas"] + sorted(
                 df_exibicao["Situação"].astype(str).unique().tolist()
             )
-            filtro_situacao = col3.selectbox("Status da Contestação:", lista_situacoes)
+            filtro_situacao = col3.selectbox("Contestação:", lista_situacoes)
+            
+            # 👇 NOVO FILTRO DE FEEDBACK
+            lista_fb = ["Todos", "✅ Sim", "❌ Não"]
+            filtro_fb = col4.selectbox("FB Realizado?", lista_fb)
 
             df_exibicao["MesAno"] = df_exibicao["criado_em"].dt.strftime("%m/%Y")
             lista_meses = ["Todos"] + df_exibicao["MesAno"].dropna().unique().tolist()
-            filtro_mes = col4.selectbox("Mês/Ano:", lista_meses)
+            filtro_mes = col5.selectbox("Mês/Ano:", lista_meses)
 
             if filtro_sdr != "Todos":
                 df_exibicao = df_exibicao[df_exibicao["sdr"] == filtro_sdr]
@@ -204,6 +222,8 @@ def render_historico_geral(nivel, nome_completo):
                 ]
             if filtro_situacao != "Todas":
                 df_exibicao = df_exibicao[df_exibicao["Situação"] == filtro_situacao]
+            if filtro_fb != "Todos":
+                df_exibicao = df_exibicao[df_exibicao["Fb Realizado"] == filtro_fb]
             if filtro_mes != "Todos":
                 df_exibicao = df_exibicao[df_exibicao["MesAno"] == filtro_mes]
 
@@ -215,13 +235,17 @@ def render_historico_geral(nivel, nome_completo):
         st.warning("Nenhum registro corresponde aos filtros selecionados.")
         return
 
+    # 👇 Atualizei as colunas de exibição da tabela para mostrar o "Fb Realizado"
     st.dataframe(
-        df_exibicao[["Data", "sdr", "nota", "monitor_responsavel", "Situação"]],
+        df_exibicao[["Data", "sdr", "nota", "monitor_responsavel", "Situação", "Fb Realizado"]],
         use_container_width=True,
         hide_index=True,
         column_config={
             "nota": st.column_config.ProgressColumn(
                 "Nota", format="%d%%", min_value=0, max_value=100
+            ),
+            "Fb Realizado": st.column_config.TextColumn(
+                "FB Realizado?"
             )
         },
     )
@@ -230,7 +254,7 @@ def render_historico_geral(nivel, nome_completo):
     st.subheader("🔍 Ver Detalhes da Monitoria")
 
     opcoes_hist = {
-        f"📅 {row['Data']} | SDR: {row['sdr']} | Nota: {row['nota']}%": row["id"]
+        f"📅 {row['Data']} | Avaliado: {row['sdr']} | Nota: {row['nota']}%": row["id"]
         for _, row in df_exibicao.iterrows()
     }
     escolha = st.selectbox("Escolha a Avaliação:", [""] + list(opcoes_hist.keys()))
@@ -268,7 +292,10 @@ def render_historico_geral(nivel, nome_completo):
                 )
 
             if linha.get("observacoes"):
-                st.info(f"💬 **Feedback:** {linha['observacoes']}")
+                st.info(f"💬 **Feedback do Auditor:** {linha['observacoes']}")
+                
+            if linha.get("resposta_gestor") and str(linha.get("resposta_gestor")).lower() != 'nan':
+                st.success(f"🎯 **Plano de Ação do Gestor (1:1):** {linha['resposta_gestor']}")
 
             c_l1, c_l2 = st.columns(2)
             if linha.get("link_selene"):
@@ -369,7 +396,6 @@ def render_historico_geral(nivel, nome_completo):
                 "🗑️ Excluir esta Auditoria", type="primary", use_container_width=True
             ):
                 modal_anular(id_sel, linha["sdr"])
-
 
 # ==========================================================
 # 🚀 MÁGICA: COMPONENTE DE SINO EM TEMPO REAL
@@ -584,7 +610,6 @@ def main():
 
         # 2. CARTÃO DE PERFIL COM O SININHO DISCRETO
         with st.container(border=True):
-            # Ajustei a largura das colunas para o sino (col_bell) respirar melhor e não espremer
             col_img, col_dados, col_bell = st.columns([1, 2.5, 1.3])
             foto_p = st.session_state.get("foto_url")
 
@@ -624,7 +649,6 @@ def main():
                 )
 
             with col_bell:
-                # 🚀 CHAMA O COMPONENTE TEMPO REAL E BONITO
                 render_sininho_live(nome_completo, nivel)
 
         # 3. FILTRO GLOBAL (SÓ PARA LIDERANÇA)
@@ -680,7 +704,7 @@ def main():
         menu_groups["📊 VISÃO GERAL"]["📊 Dashboard"] = "DASHBOARD"
 
         if nivel not in ["ADMIN", "GESTAO", "AUDITOR", "GERENCIA"]:
-            # VISÃO DO SDR
+            # VISÃO DO SDR / ESPECIALISTA
             menu_groups["📊 VISÃO GERAL"]["📈 Meus Resultados"] = "MEUS_RESULTADOS"
             menu_groups["📊 VISÃO GERAL"]["📚 Histórico"] = "HISTORICO"
 
@@ -696,6 +720,10 @@ def main():
             if nivel in ["ADMIN", "GERENCIA", "AUDITOR"]:
                 menu_groups["⚡ OPERAÇÃO"]["📝 Nova Monitoria"] = "MONITORIA"
                 menu_groups["⚡ OPERAÇÃO"]["⚖️ Contestações"] = "CONTESTACAO"
+
+            # 👇 AQUI ADICIONAMOS O BOTÃO DA NOVA TELA DE FEEDBACK PARA A LIDERANÇA
+            if nivel in ["ADMIN", "GERENCIA", "GESTAO", "AUDITOR"]:
+                menu_groups["⚡ OPERAÇÃO"]["🎯 Feedbacks (1:1)"] = "FEEDBACKS"
 
             if nivel in ["ADMIN", "GERENCIA", "GESTAO"]:
                 menu_groups["⚡ OPERAÇÃO"]["🎯 Matriz de Decisão"] = "PDI"
@@ -770,6 +798,9 @@ def main():
             render_meus_resultados()
         elif page == "HISTORICO":
             render_historico_geral(nivel, nome_completo)
+        # 👇 ROTA PARA A NOVA TELA DE FEEDBACK!
+        elif page == "FEEDBACKS":
+            render_historico_monitorias()
         elif page == "RELATORIOS":
             render_relatorios()
         elif page == "CADASTRO":

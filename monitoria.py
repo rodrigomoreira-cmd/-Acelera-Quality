@@ -11,83 +11,71 @@ from database import supabase, get_all_records_db, registrar_auditoria
 # ==========================================================
 CRITERIOS_N1_BACKUP = [
     "Não realizar o primeiro contato através do Selene Bot quando aplicável.",
-    "Utilizar canal de contato diferente do recomendado para a origem do lead.",
-    "Registrar motivo de descarte sem detalhamento adequado.",
-    "Deixar de confirmar formalmente o envio do convite e link da reunião.",
-    "Não utilizar canais alternativos de contato quando recomendados pelo processo.",
-    "Deixar pendências operacionais de baixo impacto na gestão do card."
+    "Utilizar canal de contato diferente do recomendado para a origem do lead."
 ]
-
 CRITERIOS_N2_BACKUP = [
     "Não registrar adequadamente informações do ICP.",
-    "Avançar lead sem validação completa dos critérios obrigatórios.",
-    "Movimentar o card para qualificação sem evidências suficientes de ICP e interesse.",
-    "Conduzir atendimento sem abordagem consultiva mínima.",
-    "Não alinhar expectativas da reunião com o lead.",
-    "Realizar descarte sem justificativa adequada.",
-    "Não transferir informações relevantes para preparação do Especialista.",
-    "Falhas de preenchimento relevantes que prejudiquem a continuidade do processo."
+    "Avançar lead sem validação completa dos critérios obrigatórios."
 ]
-
 CRITERIOS_N3_BACKUP = [
-    "Não iniciar contato com o lead dentro do prazo operacional definido sem justificativa válida.",
-    "Deixar lead parado na etapa 'Novos Leads' por período superior ao permitido.",
-    "Realizar descarte fora da etapa correta do processo.",
-    "Não executar a cadência mínima obrigatória antes de encerrar a tentativa de contato.",
-    "Deixar lead sem interação por período superior ao permitido durante atendimento ativo.",
-    "Realizar contatos sem registro adequado nos sistemas oficiais da empresa.",
-    "Avançar lead sem validação mínima de ICP.",
-    "Forçar avanço de lead sem aderência ao perfil definido pela empresa.",
-    "Agendar reunião sem preenchimento completo do formulário oficial de qualificação.",
-    "Realizar distribuição indevida de agenda ou descumprir regras de Round Robin.",
-    "Não executar o processo obrigatório de reagendamento após No Show.",
-    "Manter status incorreto do lead no CRM gerando distorção dos indicadores.",
-    "Manipular informações comerciais, registros ou métricas.",
-    "Utilizar ferramentas, formulários, processos ou metodologias diferentes das oficialmente definidas.",
-    "Deixar de utilizar sistemas obrigatórios para registro e acompanhamento das atividades."
+    "Não iniciar contato com o lead dentro do prazo operacional definido sem justificativa válida."
 ]
 
 # ==========================================================
-# 🔄 FUNÇÃO PARA BUSCAR CRITÉRIOS DO BANCO (criterios_qa)
+# 🔄 FUNÇÃO PARA BUSCAR CRITÉRIOS DO BANCO (FILTRO POR DEPARTAMENTO)
 # ==========================================================
-def buscar_criterios_dinamicos():
-    """Busca as perguntas baseadas na estrutura exata do seu Supabase, sem cache para atualização em tempo real."""
+def buscar_criterios_dinamicos(departamento_alvo="SDR"):
+    """Busca as perguntas no Supabase filtrando pelo departamento selecionado."""
     try:
         df_crit = get_all_records_db("criterios_qa")
         if df_crit is not None and not df_crit.empty:
             
             n1, n2, n3 = [], [], []
+            perguntas_vistas = set() 
+            
+            # Normaliza o departamento alvo para comparação
+            dept_alvo_limpo = str(departamento_alvo).strip().upper()
             
             for _, row in df_crit.iterrows():
                 # 1. Verifica se está ativo
                 ativo = str(row.get("esta_ativo", "True")).strip().lower()
                 if ativo not in ['true', '1', 't', 'yes', 'sim']:
                     continue 
+                
+                # 2. FILTRO DE DEPARTAMENTO (A mágica acontece aqui)
+                crit_dept = str(row.get("departamento", "TODOS")).strip().upper()
+                
+                # Se o critério não for do departamento da pessoa E também não for para "TODOS", salta fora!
+                if crit_dept != "TODOS" and crit_dept != dept_alvo_limpo and "AMBOS" not in crit_dept:
+                    continue
                     
-                # 2. Pega o texto
+                # 3. Pega o texto da pergunta
                 texto_nome = str(row.get("nome", "")).strip()
                 texto_desc = str(row.get("descricao", "")).strip()
                 texto_final = texto_desc if len(texto_desc) > len(texto_nome) else texto_nome
                     
                 if not texto_final or texto_final.lower() == "nan":
                     continue
+                
+                # Filtro Anti-Duplicata
+                if texto_final in perguntas_vistas:
+                    continue
+                perguntas_vistas.add(texto_final)
                     
-                # 3. Lê grupo e peso
+                # 4. Lê grupo e peso
                 grupo = str(row.get("grupo", "")).strip().upper()
                 try:
-                    peso_val = float(row.get("peso", 0))
+                    peso_val = float(row.get("peso", 0)) 
                 except:
                     peso_val = 0
                 
-                # 👇 AQUI ESTÁ A CORREÇÃO: Prioridade total para o Grupo!
-                # O sistema agora ignora o "peso" se o grupo N1, N2 ou N3 estiver preenchido.
+                # 5. Distribui o critério pela aba correta
                 if "N1" in grupo:
                     n1.append(texto_final)
                 elif "N2" in grupo:
                     n2.append(texto_final)
                 elif "N3" in grupo:
                     n3.append(texto_final)
-                # Plano B: Só usa o peso se o campo grupo estiver vazio por algum motivo
                 elif peso_val == 1:
                     n1.append(texto_final)
                 elif peso_val == 3:
@@ -103,6 +91,7 @@ def buscar_criterios_dinamicos():
         
     print("Usando critérios de backup!")
     return CRITERIOS_N1_BACKUP, CRITERIOS_N2_BACKUP, CRITERIOS_N3_BACKUP
+
 # ==========================================================
 # 🖥️ RENDERIZAÇÃO DA TELA DE MONITORIA
 # ==========================================================
@@ -114,30 +103,35 @@ def render_nova_monitoria():
     auditor_nome = st.session_state.get("user_nome", "Auditor Desconhecido")
 
     # ==========================================================
-    # 🔍 BUSCA INTELIGENTE DE SDRs NO BANCO DE DADOS
+    # 🔍 BUSCA DE AVALIADOS E MAPEAMENTO DE DEPARTAMENTOS
     # ==========================================================
     df_usuarios = get_all_records_db("usuarios")
-    lista_sdrs = []
+    lista_avaliados = []
+    mapa_departamentos = {} # 👈 Dicionário que decora quem é SDR e quem é Especialista
     
     if df_usuarios is not None and not df_usuarios.empty:
-        if 'departamento' in df_usuarios.columns:
-            df_filtrado = df_usuarios[df_usuarios['departamento'].astype(str).str.upper() == 'SDR']
-            lista_sdrs = df_filtrado['nome'].dropna().unique().tolist()
-        elif 'nivel' in df_usuarios.columns:
-            df_filtrado = df_usuarios[df_usuarios['nivel'].astype(str).str.upper() == 'SDR']
-            lista_sdrs = df_filtrado['nome'].dropna().unique().tolist()
-        else:
-            lista_sdrs = df_usuarios['nome'].dropna().unique().tolist()
+        # Filtra apenas ativos
+        if 'ativo' in df_usuarios.columns:
+            df_usuarios = df_usuarios[df_usuarios['ativo'].astype(str).str.lower().isin(['true', '1', 't', 'yes', 'sim'])]
             
-    lista_sdrs = sorted(lista_sdrs) if lista_sdrs else ["Nenhum usuário encontrado"]
+        if 'nome' in df_usuarios.columns:
+            # Pega o nome e o departamento de cada um
+            for _, row in df_usuarios.iterrows():
+                nome_val = str(row['nome']).strip()
+                dept_val = str(row.get('departamento', 'SDR')).strip()
+                
+                if nome_val and nome_val.lower() != 'nan':
+                    lista_avaliados.append(nome_val)
+                    mapa_departamentos[nome_val] = dept_val
+            
+    lista_avaliados = sorted(list(set(lista_avaliados))) if lista_avaliados else ["Nenhum usuário ativo encontrado"]
 
     # 1. DADOS PRINCIPAIS DA AVALIAÇÃO
     with st.container(border=True):
         st.markdown("### 👤 Dados do Avaliado")
         col1, col2 = st.columns(2)
         
-        # Adicionado chaves (keys) aos widgets para possibilitar a limpeza remota
-        sdr_selecionado = col1.selectbox("Selecione o SDR:", [""] + lista_sdrs, key="sdr_selecionado_widget")
+        sdr_selecionado = col1.selectbox("Selecione o Avaliado:", [""] + lista_avaliados, key="sdr_selecionado_widget")
         data_avaliacao = col2.date_input("Data da Avaliação:", datetime.today(), key="data_avaliacao_widget")
         
         col_link1, col_link2 = st.columns(2)
@@ -146,29 +140,32 @@ def render_nova_monitoria():
 
     st.write("##")
     
-    # ==========================================================
-    # 🛑 REGRA MÁGICA: SÓ CARREGA SE O SDR ESTIVER SELECIONADO
-    # ==========================================================
-    if not sdr_selecionado or sdr_selecionado == "Nenhum usuário encontrado":
-        st.info("👈 Por favor, selecione um SDR no campo acima para carregar o formulário de avaliação.")
+    if not sdr_selecionado or sdr_selecionado == "Nenhum usuário ativo encontrado":
+        st.info("👈 Por favor, selecione um usuário no campo acima para carregar o formulário de avaliação.")
         return 
     
-    # Busca os critérios do banco
-    criterios_n1, criterios_n2, criterios_n3 = buscar_criterios_dinamicos()
+    # Descobre de que departamento é a pessoa selecionada (Se não encontrar, assume SDR)
+    departamento_do_avaliado = mapa_departamentos.get(sdr_selecionado, "SDR")
+    st.caption(f"📌 Carregando critérios para o departamento: **{departamento_do_avaliado}**")
+    
+    # 👈 Busca as perguntas passando o departamento exato do colaborador selecionado!
+    criterios_n1, criterios_n2, criterios_n3 = buscar_criterios_dinamicos(departamento_alvo=departamento_do_avaliado)
     
     # 2. SISTEMA DE ABAS (N1, N2, N3)
     tab_n1, tab_n2, tab_n3 = st.tabs(["🟢 N1 (Penalidade: -1%)", "🟡 N2 (Penalidade: -3%)", "🔴 N3 (Penalidade: -7%)"])
     
     respostas_monitoria = {}
 
-    def render_perguntas(lista_perguntas, peso_penalidade, tab_context):
-        """Função auxiliar para renderizar as perguntas em caixas abertas"""
+    def render_perguntas(lista_perguntas, peso_penalidade, tab_context, prefixo_aba):
         penalidade_acumulada = 0
         with tab_context:
             if not lista_perguntas:
-                st.info("Nenhum critério ativo cadastrado para este nível.")
+                st.info(f"Nenhum critério ativo cadastrado para {departamento_do_avaliado} neste nível.")
                 
-            for pergunta in lista_perguntas:
+            for idx, pergunta in enumerate(lista_perguntas):
+                key_radio = f"radio_{prefixo_aba}_{idx}"
+                key_obs = f"obs_{prefixo_aba}_{idx}"
+                
                 with st.container(border=True):
                     st.markdown(f"**📌 {pergunta}**")
                     
@@ -176,7 +173,7 @@ def render_nova_monitoria():
                         "Avaliação:",
                         options=["C", "NC", "NSA"],
                         index=0, 
-                        key=f"radio_{pergunta}",
+                        key=key_radio,
                         horizontal=True,
                         format_func=lambda x: "✅ Conforme" if x == "C" else "❌ Não Conforme" if x == "NC" else "➖ Não Se Aplica (NSA)",
                         label_visibility="collapsed"
@@ -185,29 +182,25 @@ def render_nova_monitoria():
                     comentario = ""
                     if status == "NC":
                         st.warning(f"⚠️ Penalidade de -{peso_penalidade}% será aplicada.")
-                        comentario = st.text_area("Motivo da Não Conformidade (Obrigatório):", key=f"obs_{pergunta}")
+                        comentario = st.text_area("Motivo da Não Conformidade (Obrigatório):", key=key_obs)
                         penalidade_acumulada += peso_penalidade
                         
-                    respostas_monitoria[pergunta] = {
+                    respostas_monitoria[f"{prefixo_aba}_{idx}"] = {
+                        "criterio": pergunta, 
                         "nota": status,
                         "comentario": comentario,
                         "penalidade_aplicada": peso_penalidade if status == "NC" else 0
                     }
         return penalidade_acumulada
 
-    # Renderiza e soma as penalidades de cada aba
-    penalidades_n1 = render_perguntas(criterios_n1, 1, tab_n1)
-    penalidades_n2 = render_perguntas(criterios_n2, 3, tab_n2)
-    penalidades_n3 = render_perguntas(criterios_n3, 7, tab_n3)
+    penalidades_n1 = render_perguntas(criterios_n1, 1, tab_n1, "n1")
+    penalidades_n2 = render_perguntas(criterios_n2, 3, tab_n2, "n2")
+    penalidades_n3 = render_perguntas(criterios_n3, 7, tab_n3, "n3")
 
     total_penalidades = penalidades_n1 + penalidades_n2 + penalidades_n3
 
-    # ==========================================================
-    # 🧮 CÁLCULO DA NOTA FINAL E SUBMISSÃO
-    # ==========================================================
     st.write("---")
     
-    # A nota começa sempre em 100 e subtrai as penalidades
     nota_final = max(0, 100 - total_penalidades)
     
     col_nota, col_obs = st.columns([1, 2])
@@ -224,14 +217,12 @@ def render_nova_monitoria():
         )
         
     with col_obs:
-        observacoes_gerais = st.text_area("Comentários Gerais ou Feedback para o SDR:", height=130, key="observacoes_gerais_widget")
+        observacoes_gerais = st.text_area("Comentários Gerais ou Feedback para o Avaliado:", height=130, key="observacoes_gerais_widget")
 
     st.write("##")
 
-    # BOTÃO DE SALVAR
     if st.button("💾 Salvar Monitoria e Aplicar Nota", type="primary", use_container_width=True):
             
-        # Validação: Obrigar justificativa para as Não Conformidades (NC)
         falta_comentario = False
         for p, dados in respostas_monitoria.items():
             if dados["nota"] == "NC" and len(dados["comentario"].strip()) < 5:
@@ -242,10 +233,10 @@ def render_nova_monitoria():
         if falta_comentario:
             return
 
-        with st.spinner("A guardar avaliação e a notificar o SDR..."):
+        with st.spinner("A guardar avaliação e a notificar o usuário..."):
             try:
                 payload = {
-                    "sdr": sdr_selecionado,
+                    "sdr": sdr_selecionado, 
                     "monitor_responsavel": auditor_nome,
                     "data": str(data_avaliacao), 
                     "link_selene": link_selene,
@@ -254,13 +245,12 @@ def render_nova_monitoria():
                     "observacoes": observacoes_gerais,
                     "detalhes": respostas_monitoria,
                     "criado_em": datetime.now().isoformat(),
-                    "departamento": "SDR"
+                    "departamento": departamento_do_avaliado # Salva corretamente de qual departamento era
                 }
 
                 resposta = supabase.table("monitorias").insert(payload).execute()
 
                 if resposta.data:
-                    # Envia notificação automática para o sininho do SDR
                     msg_notificacao = f"Sua avaliação de Qualidade foi finalizada! Nota: {nota_final}%. Acesse o histórico para ver o feedback."
                     supabase.table("notificacoes").insert({
                         "usuario": sdr_selecionado,
@@ -270,37 +260,19 @@ def render_nova_monitoria():
                     
                     registrar_auditoria("MONITORIA", f"Avaliou {sdr_selecionado} com {nota_final}%", sdr_selecionado, auditor_nome)
 
-                    # ==========================================================
-                    # 🧼 INTEGRAÇÃO DA REGRA DE LIMPEZA DE CAMPOS (RESET)
-                    # ==========================================================
-                    # 1. Limpa as caixas de respostas dinâmicas (N1, N2, N3)
-                    for pergunta in criterios_n1 + criterios_n2 + criterios_n3:
-                        key_radio = f"radio_{pergunta}"
-                        key_obs = f"obs_{pergunta}"
-                        if key_radio in st.session_state:
-                            del st.session_state[key_radio]
-                        if key_obs in st.session_state:
-                            del st.session_state[key_obs]
+                    chaves_memoria = list(st.session_state.keys())
+                    for k in chaves_memoria:
+                        if k.startswith("radio_n") or k.startswith("obs_n"):
+                            del st.session_state[k]
 
-                    # 2. Limpa os campos fixos da tela
-                    chaves_fixas_para_limpar = [
-                        "sdr_selecionado_widget",
-                        "link_selene_widget",
-                        "link_nectar_widget",
-                        "observacoes_gerais_widget"
-                    ]
-                    for chave in chaves_fixas_para_limpar:
+                    chaves_fixas = ["sdr_selecionado_widget", "link_selene_widget", "link_nectar_widget", "observacoes_gerais_widget", "data_avaliacao_widget"]
+                    for chave in chaves_fixas:
                         if chave in st.session_state:
                             del st.session_state[chave]
-                    
-                    # O campo da data retorna automaticamente para o dia de hoje
-                    if "data_avaliacao_widget" in st.session_state:
-                        del st.session_state["data_avaliacao_widget"]
-                    # ==========================================================
 
-                    st.success("✅ Monitoria salva com sucesso! O SDR já foi notificado e os campos foram limpos.")
+                    st.success("✅ Monitoria salva com sucesso! O Avaliado já foi notificado e a tela foi limpa.")
                     time.sleep(2)
-                    st.rerun() # Reinicia a página limpa!
+                    st.rerun() 
                 else:
                     st.error("Erro ao salvar no banco de dados.")
 
