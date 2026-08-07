@@ -45,8 +45,9 @@ def render_usuario_gestao():
         return
 
     # ==========================================================
-    # 🛡️ TRAVA DE SEGURANÇA: OCULTAR ADMIN MESTRE SEMPRE
+    # 🛡️ TRAVA DE SEGURANÇA E VISIBILIDADE
     # ==========================================================
+    # 1. Oculta o Admin Mestre para todos (Segurança de raiz)
     df_users = df_users[
         (
             ~df_users["email"]
@@ -58,18 +59,21 @@ def render_usuario_gestao():
             .astype(str)
             .str.contains("admin@grupoacelerador.com.br", na=False, case=False)
         )
-        & (
-            df_users["nivel"].astype(str).str.upper() != "ADMIN"
-        )  # Gestor comum não deve ver outros admins
     ].copy()
 
+    # 2. Se NÃO for ADMIN, não pode ver outros admins (Evita escalada de privilégios)
+    if nivel_logado != "ADMIN":
+        df_users = df_users[
+            df_users["nivel"].astype(str).str.upper() != "ADMIN"
+        ].copy()
+
     # ==========================================================
-    # FILTRO DE VISIBILIDADE (Quem o gestor pode editar?)
+    # FILTRO DE DEPARTAMENTO (Quem o gestor pode editar?)
     # ==========================================================
     if nivel_logado in ["ADMIN", "GERENCIA"]:
         df_filtrado = df_users.copy()
     else:
-        # Gestão comum vê apenas o seu departamento
+        # Gestão comum vê apenas o seu próprio departamento
         df_filtrado = df_users[
             df_users["departamento"].astype(str).str.upper() == dept_logado.upper()
         ].copy()
@@ -90,7 +94,7 @@ def render_usuario_gestao():
             "nao",
         ]:
             return False
-        return True  # Default
+        return True  # Default caso seja nulo
 
     df_filtrado["is_ativo_clean"] = df_filtrado.apply(checar_ativo, axis=1)
     df_filtrado = df_filtrado.sort_values(
@@ -305,8 +309,8 @@ def render_usuario_gestao():
                     if st.button(
                         "Confirmar Troca", type="primary", use_container_width=True
                     ):
-                        if len(nova_senha) < 6:
-                            st.error("A senha deve ter no mínimo 6 caracteres.")
+                        if len(nova_senha) < 4:  # Consistente com cadastro.py (4 chars)
+                            st.error("A senha deve ter no mínimo 4 caracteres.")
                         else:
                             try:
                                 # AQUI ESTÁ A CORREÇÃO DE SEGURANÇA! (hash_password)

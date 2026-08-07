@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from database import supabase, registrar_auditoria
+from database import supabase, registrar_auditoria, get_all_records_db
 import time
 
 def render_gestao_criterios():
@@ -19,235 +19,153 @@ def render_gestao_criterios():
         unsafe_allow_html=True,
     )
     st.markdown(
-        "Gerencie as perguntas do checklist de monitoria e competências do PDI de forma centralizada."
+        "Gerencie os modelos de checklist de monitoria e competências do PDI de forma centralizada."
     )
 
     usuario_logado = str(st.session_state.get("user_nome", "Sistema"))
-
-    # Categorias alinhadas com a Monitoria
-    OPCOES_CATEGORIAS = ["N1", "N2", "N3"]
     
+    # 👇 PUXA O FILTRO DA BARRA LATERAL
+    dept_logado = str(st.session_state.get("departamento_selecionado", "Todos"))
+
     OPCOES_DEPARTAMENTO = [
         "SDR",
         "Especialista",
         "Venda de Ingresso",
         "Auditor",
+        "Gestão",
+        "Gerência",
         "Todos",
     ]
+    
+    # Define o índice padrão baseado no filtro global da sidebar
+    indice_dept_padrao = OPCOES_DEPARTAMENTO.index(dept_logado) if dept_logado in OPCOES_DEPARTAMENTO else len(OPCOES_DEPARTAMENTO) - 1
 
     # ==========================================================
     # SISTEMA DE ABAS
     # ==========================================================
-    aba_qa, aba_pdi = st.tabs(["🎧 Critérios de Qualidade (QA)", "🎯 Competências PDI"])
+    aba_qa, aba_pdi = st.tabs(["📑 Modelos de Checklist (QA)", "🎯 Competências PDI"])
 
     # ==========================================================
-    # ABA 1: CRITÉRIOS DE QUALIDADE (QA)
+    # ABA 1: CONSTRUTOR DE CHECKLISTS VERSIONADOS
     # ==========================================================
     with aba_qa:
         st.write("##")
-        with st.expander("➕ Adicionar Novo Critério QA", expanded=False):
+        with st.expander("➕ Criar Novo Modelo de Checklist", expanded=False):
             with st.container(border=True):
-                with st.form("novo_item_qa_form", clear_on_submit=True, border=False):
-                    st.markdown(
-                        f"<h4 style='color: {COR_PRINCIPAL}; margin-top: 0;'>📝 Novo Item de Avaliação</h4>",
-                        unsafe_allow_html=True,
-                    )
+                st.markdown(f"<h4 style='color: {COR_PRINCIPAL}; margin-top: 0;'>📝 Construtor de Formulário</h4>", unsafe_allow_html=True)
+                st.markdown("Preencha os dados do modelo e adicione as perguntas na tabela abaixo.")
+                
+                c_nome, c_versao, c_perfil = st.columns([2, 1, 1])
+                nome_modelo = c_nome.text_input("Nome do Checklist", placeholder="Ex: Avaliação Outbound")
+                versao_modelo = c_versao.text_input("Versão", placeholder="Ex: v1.0")
+                # Já vem pré-preenchido com o filtro global:
+                perfil_modelo = c_perfil.selectbox("Perfil Alvo", OPCOES_DEPARTAMENTO, index=indice_dept_padrao)
 
-                    nome = st.text_input(
-                        "Pergunta / Critério",
-                        placeholder="Ex: Não realizar o primeiro contato através do Selene Bot...",
-                    )
+                st.markdown("#### 📋 Perguntas do Checklist")
+                st.caption("Adicione ou edite as linhas abaixo. Linhas com a pergunta vazia serão ignoradas automaticamente.")
+                
+                # Tabela inicial vazia para o gestor preencher
+                df_perguntas_base = pd.DataFrame([
+                    {"Grupo": "N1", "Pergunta": "", "Peso": 1, "Fatal": False},
+                    {"Grupo": "N1", "Pergunta": "", "Peso": 1, "Fatal": False},
+                    {"Grupo": "N2", "Pergunta": "", "Peso": 3, "Fatal": False},
+                    {"Grupo": "N3", "Pergunta": "", "Peso": 7, "Fatal": False},
+                    {"Grupo": "N3", "Pergunta": "", "Peso": 7, "Fatal": False},
+                ])
 
-                    c_grupo, c_dept = st.columns(2)
-                    grupo = c_grupo.selectbox(
-                        "Categoria do Checklist (Nível)", OPCOES_CATEGORIAS
-                    )
-                    departamento = c_dept.selectbox(
-                        "Departamento Alvo", OPCOES_DEPARTAMENTO
-                    )
+                df_editado = st.data_editor(
+                    df_perguntas_base,
+                    column_config={
+                        "Grupo": st.column_config.SelectboxColumn("Nível (Aba)", options=["N1", "N2", "N3"], required=True),
+                        "Pergunta": st.column_config.TextColumn("Critério / Pergunta", width="large"),
+                        "Peso": st.column_config.SelectboxColumn("Penalidade (%)", options=[1, 3, 7], required=True),
+                        "Fatal": st.column_config.CheckboxColumn("Zera Nota? (Fatal)"),
+                    },
+                    num_rows="dynamic",
+                    use_container_width=True,
+                    hide_index=True
+                )
 
-                    st.write("")
-                    st.markdown("#### ⚖️ Inteligência do Critério")
-                    st.caption(
-                        "Defina o peso desta pergunta para a média final (1 para N1, 3 para N2, 7 para N3)."
-                    )
-
-                    col_p, col_f = st.columns([1.5, 1])
+                st.write("")
+                if st.button("💾 Salvar Modelo de Checklist", type="primary", use_container_width=True):
+                    df_valido = df_editado[df_editado["Pergunta"].str.strip() != ""]
                     
-                    # Peso travado na criação
-                    peso = col_p.select_slider(
-                        "Peso do Item (Pontos de Penalidade)",
-                        options=[1, 3, 7],
-                        value=1,
-                    )
-
-                    col_f.write("")  
-                    col_f.write("")
-                    eh_fatal = col_f.toggle("🚨 Marcar como ITEM FATAL")
-
-                    desc_ajuda = st.text_area(
-                        "Guia para o Auditor (Opcional)",
-                        placeholder="Dicas de como o avaliador deve julgar esta etapa...",
-                        height=100,
-                    )
-
-                    st.write("")
-                    if st.form_submit_button(
-                        "💾 Salvar Novo Critério",
-                        use_container_width=True,
-                        type="primary",
-                    ):
-                        if nome:
+                    if not nome_modelo or not versao_modelo:
+                        st.error("⚠️ O Nome do Modelo e a Versão são obrigatórios!")
+                    elif df_valido.empty:
+                        st.error("⚠️ Adicione pelo menos uma pergunta válida ao checklist!")
+                    else:
+                        with st.spinner("Salvando novo modelo..."):
+                            perguntas_json = df_valido.to_dict(orient="records")
+                            payload = {
+                                "nome": nome_modelo.strip(),
+                                "versao": versao_modelo.strip(),
+                                "perfil": perfil_modelo,
+                                "ativo": True,
+                                "perguntas": perguntas_json
+                            }
                             try:
-                                payload = {
-                                    "nome": str(nome).strip(),
-                                    "descricao": str(desc_ajuda).strip(),
-                                    "grupo": grupo,
-                                    "departamento": departamento,
-                                    "peso": int(peso),
-                                    "eh_fatal": bool(eh_fatal),
-                                    "esta_ativo": True,
-                                }
-                                supabase.table("criterios_qa").insert(payload).execute()
+                                supabase.table("modelos_checklist").insert(payload).execute() # type: ignore
                                 registrar_auditoria(
-                                    "CRIAR CRITÉRIO QA",
-                                    f"Criou critério '{nome}' no grupo {grupo}",
-                                    "Geral",
-                                    usuario_logado,
+                                    "CRIAR MODELO CHECKLIST", 
+                                    f"Criou checklist '{nome_modelo}' versão '{versao_modelo}' para {perfil_modelo}", 
+                                    "Geral", 
+                                    usuario_logado
                                 )
-                                st.toast(
-                                    f"✅ Critério adicionado com sucesso!", icon="✨"
-                                )
-                                time.sleep(1)
+                                st.success(f"✅ Modelo {nome_modelo} ({versao_modelo}) salvo com sucesso!")
+                                time.sleep(1.5)
                                 st.rerun()
                             except Exception as e:
-                                st.error(f"Erro ao salvar: {e}")
-                        else:
-                            st.warning(
-                                "⚠️ O campo 'Pergunta / Critério' é obrigatório."
-                            )
+                                st.error(f"Erro ao salvar modelo: {e}")
 
         st.divider()
-        st.markdown("### 📋 Tabela de Critérios Ativos")
-        st.caption(
-            "Edite pesos, nomes ou desative critérios diretamente na tabela abaixo. Clique no botão ao final para salvar."
-        )
-
+        st.markdown(f"### 📚 Biblioteca de Checklists ({dept_logado})")
+        st.caption("Ative, desative ou exclua os formulários que ficarão disponíveis para os auditores.")
+        
         try:
-            res = supabase.table("criterios_qa").select("*").order("grupo", desc=False).execute()
-            df = (
-                pd.DataFrame(res.data)
-                if hasattr(res, "data") and res.data
-                else pd.DataFrame()
-            )
+            # APLICAÇÃO DO FILTRO GLOBAL NA BUSCA DOS MODELOS
+            query_modelos = supabase.table("modelos_checklist").select("*").order("criado_em", desc=True)
+            if dept_logado != "Todos":
+                query_modelos = query_modelos.eq("perfil", dept_logado)
+                
+            res_modelos = query_modelos.execute() # type: ignore
+            
+            if res_modelos.data:
+                for mod in res_modelos.data:
+                    status_txt = "🟢 ATIVO" if mod['ativo'] else "🔴 INATIVO"
+                    with st.expander(f"{status_txt} | {mod['nome']} (Versão: {mod['versao']}) - Perfil: {mod['perfil']}"):
+                        
+                        df_display = pd.DataFrame(mod['perguntas'])
+                        st.dataframe(df_display, use_container_width=True, hide_index=True)
+                        
+                        st.write("")
+                        
+                        # Colunas para alinhar o toggle de ativar/desativar e o botão de excluir
+                        col_toggle, col_delete = st.columns([3, 1])
+                        
+                        with col_toggle:
+                            ativo_toggle = st.toggle("Habilitar para uso nas Monitorias", value=mod['ativo'], key=f"tgl_{mod['id']}")
+                            if ativo_toggle != mod['ativo']:
+                                supabase.table("modelos_checklist").update({"ativo": ativo_toggle}).eq("id", mod['id']).execute() # type: ignore
+                                acao = "Ativou" if ativo_toggle else "Desativou"
+                                registrar_auditoria("STATUS MODELO CHECKLIST", f"{acao} o checklist: '{mod['nome']} {mod['versao']}'", "Geral", usuario_logado)
+                                st.rerun()
+                                
+                        with col_delete:
+                            # 👇 BOTÃO DE EXCLUIR
+                            if st.button("🗑️ Excluir Modelo", key=f"del_{mod['id']}", use_container_width=True):
+                                try:
+                                    supabase.table("modelos_checklist").delete().eq("id", mod['id']).execute() # type: ignore
+                                    registrar_auditoria("EXCLUIR MODELO CHECKLIST", f"Apagou o checklist: '{mod['nome']} {mod['versao']}'", "Geral", usuario_logado)
+                                    st.success("✅ Modelo excluído!")
+                                    time.sleep(1)
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erro ao excluir modelo: {e}")
+            else:
+                st.info(f"Nenhum modelo de checklist encontrado para o filtro atual: {dept_logado}.")
         except Exception as e:
-            st.error(f"Erro ao buscar: {e}")
-            df = pd.DataFrame()
-
-        if not df.empty:
-            df["peso"] = (
-                pd.to_numeric(df["peso"], errors="coerce").fillna(1).astype(int)
-            )
-            df["eh_fatal"] = df["eh_fatal"].astype(bool)
-            df["esta_ativo"] = df["esta_ativo"].astype(bool)
-
-            df_editado = st.data_editor(
-                df[
-                    [
-                        "id",
-                        "grupo",
-                        "nome",
-                        "peso",
-                        "eh_fatal",
-                        "esta_ativo",
-                        "departamento",
-                    ]
-                ],
-                column_config={
-                    "id": st.column_config.TextColumn("ID", disabled=True),
-                    "grupo": st.column_config.SelectboxColumn(
-                        "Categoria", options=OPCOES_CATEGORIAS, required=True
-                    ),
-                    "nome": st.column_config.TextColumn(
-                        "Critério / Pergunta", width="large", required=True
-                    ),
-                    # 👇 CORREÇÃO AQUI: Bloqueando a edição do peso em massa apenas para 1, 3 e 7
-                    "peso": st.column_config.SelectboxColumn(
-                        "Peso", options=[1, 3, 7], required=True
-                    ),
-                    "eh_fatal": st.column_config.CheckboxColumn("🚨 Fatal?"),
-                    "esta_ativo": st.column_config.CheckboxColumn("Ativo?"),
-                    "departamento": st.column_config.SelectboxColumn(
-                        "Dept", options=OPCOES_DEPARTAMENTO
-                    ),
-                },
-                hide_index=True,
-                use_container_width=True,
-                num_rows="dynamic",
-                height=400,
-            )
-
-            st.write("")
-            if st.button(
-                "🔄 Aplicar Alterações em Massa (QA)",
-                type="primary",
-                use_container_width=True,
-            ):
-                with st.spinner("Sincronizando tabela com o banco de dados..."):
-                    try:
-                        houve_mudanca = False
-                        for index, row in df_editado.iterrows():
-                            # Proteção contra linhas vazias criadas direto na tabela
-                            if pd.isna(row.get("id")):
-                                continue  
-
-                            orig = df.loc[index]
-
-                            if (
-                                str(orig["nome"]) != str(row["nome"])
-                                or str(orig["grupo"]) != str(row["grupo"])
-                                or int(orig["peso"]) != int(row["peso"])
-                                or bool(orig["eh_fatal"]) != bool(row["eh_fatal"])
-                                or bool(orig["esta_ativo"]) != bool(row["esta_ativo"])
-                                or str(orig["departamento"]) != str(row["departamento"])
-                            ):
-                                houve_mudanca = True
-                                upd_payload = {
-                                    "nome": str(row["nome"]),
-                                    "grupo": str(row["grupo"]),
-                                    "peso": int(row["peso"]),
-                                    "eh_fatal": bool(row["eh_fatal"]),
-                                    "esta_ativo": bool(row["esta_ativo"]),
-                                    "departamento": str(row["departamento"]),
-                                }
-                                supabase.table("criterios_qa").update(upd_payload).eq("id", row["id"]).execute()
-
-                                if bool(orig["esta_ativo"]) != bool(row["esta_ativo"]):
-                                    acao = "Ativou" if row["esta_ativo"] else "Desativou"
-                                    registrar_auditoria(
-                                        "STATUS CRITÉRIO QA",
-                                        f"{acao} o critério: '{row['nome']}'",
-                                        "Geral",
-                                        usuario_logado,
-                                    )
-                                else:
-                                    registrar_auditoria(
-                                        "EDIÇÃO CRITÉRIO QA",
-                                        f"Editou o critério: '{row['nome']}'",
-                                        "Geral",
-                                        usuario_logado,
-                                    )
-
-                        if houve_mudanca:
-                            st.success("✅ Base de critérios de qualidade atualizada com sucesso!")
-                            time.sleep(1)
-                            st.rerun()
-                        else:
-                            st.info("Nenhuma alteração detectada na tabela.")
-                    except Exception as e:
-                        st.error(f"Erro na atualização: {e}")
-        else:
-            st.info("Nenhum critério cadastrado no banco de dados ainda.")
+            st.error(f"Erro ao buscar os modelos: {e}")
 
     # ==========================================================
     # ABA 2: CRITÉRIOS COMPORTAMENTAIS (PDI)
@@ -267,11 +185,8 @@ def render_gestao_criterios():
                         "Nome da Soft Skill",
                         placeholder="Ex: Inteligência Emocional, Resiliência...",
                     )
-                    dept_pdi = c_dept_pdi.selectbox(
-                        "Departamento",
-                        OPCOES_DEPARTAMENTO,
-                        index=len(OPCOES_DEPARTAMENTO) - 1,
-                    )
+                    # Já vem pré-preenchido com o filtro global:
+                    dept_pdi = c_dept_pdi.selectbox("Departamento", OPCOES_DEPARTAMENTO, index=indice_dept_padrao)
 
                     desc_pdi = st.text_area(
                         "Descrição Curta",
@@ -280,11 +195,7 @@ def render_gestao_criterios():
                     )
 
                     st.write("")
-                    if st.form_submit_button(
-                        "💾 Salvar Competência",
-                        type="primary",
-                        use_container_width=True,
-                    ):
+                    if st.form_submit_button("💾 Salvar Competência", type="primary", use_container_width=True):
                         if nome_pdi:
                             try:
                                 payload_pdi = {
@@ -293,13 +204,8 @@ def render_gestao_criterios():
                                     "departamento": str(dept_pdi),
                                     "esta_ativo": True,
                                 }
-                                supabase.table("criterios_comportamentais").insert(payload_pdi).execute()
-                                registrar_auditoria(
-                                    "CRIAR CRITÉRIO PDI",
-                                    f"Adicionou Skill: {nome_pdi}",
-                                    "Geral",
-                                    usuario_logado,
-                                )
+                                supabase.table("criterios_comportamentais").insert(payload_pdi).execute()  # type: ignore
+                                registrar_auditoria("CRIAR CRITÉRIO PDI", f"Adicionou Skill: {nome_pdi}", "Geral", usuario_logado)
                                 st.toast(f"✅ Soft Skill adicionada!", icon="🎯")
                                 time.sleep(1)
                                 st.rerun()
@@ -309,18 +215,16 @@ def render_gestao_criterios():
                             st.warning("⚠️ O nome da competência é obrigatório.")
 
         st.divider()
-        st.markdown("### 📝 Gerenciar Matriz de PDI")
-        st.caption(
-            "Edite os nomes, descrições ou desative habilidades da matriz de desenvolvimento."
-        )
+        st.markdown(f"### 📝 Gerenciar Matriz de PDI ({dept_logado})")
+        st.caption("Edite os nomes, descrições ou desative habilidades da matriz de desenvolvimento.")
 
         try:
-            res_comp = supabase.table("criterios_comportamentais").select("*").order("nome").execute()
-            df_comp = (
-                pd.DataFrame(res_comp.data)
-                if hasattr(res_comp, "data") and res_comp.data
-                else pd.DataFrame()
-            )
+            query_pdi = supabase.table("criterios_comportamentais").select("*").order("nome")
+            if dept_logado != "Todos":
+                query_pdi = query_pdi.eq("departamento", dept_logado)
+                
+            res_comp = query_pdi.execute()  # type: ignore
+            df_comp = pd.DataFrame(res_comp.data) if hasattr(res_comp, "data") and res_comp.data else pd.DataFrame()
 
             if not df_comp.empty:
                 if "departamento" not in df_comp.columns:
@@ -332,15 +236,9 @@ def render_gestao_criterios():
                     df_comp[["id", "nome", "descricao", "departamento", "esta_ativo"]],
                     column_config={
                         "id": st.column_config.TextColumn("ID", disabled=True),
-                        "nome": st.column_config.TextColumn(
-                            "Nome da Skill", width="medium", required=True
-                        ),
-                        "descricao": st.column_config.TextColumn(
-                            "Guia de Avaliação", width="large"
-                        ),
-                        "departamento": st.column_config.SelectboxColumn(
-                            "Dept", options=OPCOES_DEPARTAMENTO
-                        ),
+                        "nome": st.column_config.TextColumn("Nome da Skill", width="medium", required=True),
+                        "descricao": st.column_config.TextColumn("Guia de Avaliação", width="large"),
+                        "departamento": st.column_config.SelectboxColumn("Dept", options=OPCOES_DEPARTAMENTO),
                         "esta_ativo": st.column_config.CheckboxColumn("Ativo?"),
                     },
                     hide_index=True,
@@ -349,18 +247,15 @@ def render_gestao_criterios():
                 )
 
                 st.write("")
-                if st.button(
-                    "🔄 Salvar Alterações em Massa (PDI)",
-                    type="primary",
-                    use_container_width=True,
-                ):
+                if st.button("🔄 Salvar Alterações em Massa (PDI)", type="primary", use_container_width=True):
                     with st.spinner("Atualizando matriz de PDI..."):
                         houve_mudanca = False
                         for index, r in df_edit_comp.iterrows():
                             if pd.isna(r.get("id")):
                                 continue
 
-                            orig_pdi = df_comp.loc[index]
+                            orig_pdi = df_comp.loc[int(str(index))]  # type: ignore
+                            
                             if (
                                 str(orig_pdi["nome"]) != str(r["nome"])
                                 or str(orig_pdi.get("descricao", "")) != str(r.get("descricao", ""))
@@ -374,23 +269,13 @@ def render_gestao_criterios():
                                     "departamento": str(r.get("departamento", "Todos")),
                                     "esta_ativo": bool(r["esta_ativo"]),
                                 }
-                                supabase.table("criterios_comportamentais").update(p_pdi).eq("id", r["id"]).execute()
+                                supabase.table("criterios_comportamentais").update(p_pdi).eq("id", r["id"]).execute()  # type: ignore
 
                                 if bool(orig_pdi["esta_ativo"]) != bool(r["esta_ativo"]):
                                     acao = "Ativou" if r["esta_ativo"] else "Desativou"
-                                    registrar_auditoria(
-                                        "STATUS CRITÉRIO PDI",
-                                        f"{acao} a skill: '{r['nome']}'",
-                                        "Geral",
-                                        usuario_logado,
-                                    )
+                                    registrar_auditoria("STATUS CRITÉRIO PDI", f"{acao} a skill: '{r['nome']}'", "Geral", usuario_logado)
                                 else:
-                                    registrar_auditoria(
-                                        "EDIÇÃO CRITÉRIO PDI",
-                                        f"Editou a skill: '{r['nome']}'",
-                                        "Geral",
-                                        usuario_logado,
-                                    )
+                                    registrar_auditoria("EDIÇÃO CRITÉRIO PDI", f"Editou a skill: '{r['nome']}'", "Geral", usuario_logado)
 
                         if houve_mudanca:
                             st.success("✅ Matriz de Desenvolvimento (PDI) atualizada com sucesso!")
@@ -398,5 +283,7 @@ def render_gestao_criterios():
                             st.rerun()
                         else:
                             st.info("Nenhuma alteração detectada na tabela.")
+            else:
+                st.info(f"Nenhum critério comportamental encontrado para o filtro atual: {dept_logado}.")
         except Exception as e:
-            st.info(f"Crie o primeiro critério de PDI acima. (Log: {e})")
+            st.error(f"Erro ao carregar matriz de PDI: {e}")

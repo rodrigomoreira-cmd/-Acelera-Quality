@@ -6,6 +6,12 @@ from database import get_all_records_db, supabase
 
 
 def render_relatorios():
+    # --- TRAVA ANTI-PYLANCE ---
+    if supabase is None:
+        st.error("Erro de conexão com o banco de dados. Verifique suas credenciais.")
+        return
+    # ------------------------------------------------------------------
+
     # 🎨 PALETA DE CORES SISTÊMICA
     COR_PRINCIPAL = "#FF7A00"  # Laranja vibrante principal
     COR_SUCESSO = "#00E676"
@@ -158,13 +164,16 @@ def render_relatorios():
             )
             media_pdi_pct = (media_pdi_bruta / 5.0) * 100
 
-    # Cálculo Contestação
+    # 👇 CORREÇÃO: Cálculo de Contestação com cruzamento relacional de tabelas
     taxa_contestacao = 0.0
-    if "contestada" in df_mon.columns:
-        qtd_contestadas = len(df_mon[df_mon["contestada"] == True])
-        taxa_contestacao = (
-            (qtd_contestadas / qtd_monitorias) * 100 if qtd_monitorias > 0 else 0
-        )
+    if df_cont is not None and not df_cont.empty:
+        # Pega a lista de IDs das monitorias atuais na tela
+        ids_monitorias_tela = df_mon["id"].astype(str).tolist()
+        # Filtra a tabela de contestações apenas para as que correspondem a essas monitorias
+        df_cont_filtrado = df_cont[df_cont["monitoria_id"].astype(str).isin(ids_monitorias_tela)]
+        qtd_contestadas = len(df_cont_filtrado)
+        
+        taxa_contestacao = (qtd_contestadas / qtd_monitorias) * 100 if qtd_monitorias > 0 else 0
 
     def render_kpi_card(title, value, icon="", border_color=COR_PRINCIPAL):
         return f"""
@@ -280,11 +289,14 @@ def render_relatorios():
         df_final = pd.merge(
             df_mon, df_cont_resumo, left_on="id", right_on="monitoria_id", how="left"
         )
+        # 👇 CORREÇÃO: Aplica "Sim" ou "Não" na coluna Contestado com base no Merge
+        df_final["Contestado"] = df_final["Status Contestação"].apply(lambda x: "Não" if pd.isna(x) else "Sim")
     else:
         df_final = df_mon.copy()
         df_final["Motivo Contestação"] = "-"
         df_final["Resposta Gestão"] = "-"
         df_final["Status Contestação"] = "-"
+        df_final["Contestado"] = "Não"
 
     # Função para extrair apenas NC e NCG com segurança de tipo
     def processar_erros(detalhes):
@@ -305,9 +317,6 @@ def render_relatorios():
         df_final["Detalhes (Erros)"] = df_final["detalhes"].apply(processar_erros)
         df_final["Data Monitoria"] = (
             df_final["criado_em"].dt.strftime("%d/%m/%Y %H:%M").fillna("-")
-        )
-        df_final["Contestado"] = df_final.get("contestada", False).apply(
-            lambda x: "Sim" if x else "Não"
         )
 
         cols_fillna = ["Motivo Contestação", "Resposta Gestão", "Status Contestação"]

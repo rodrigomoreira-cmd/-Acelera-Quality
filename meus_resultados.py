@@ -245,7 +245,7 @@ def render_meus_resultados():
 
         # --- D. LISTA DE FEEDBACKS (ESTILO MENSAGENS) ---
         st.markdown("### 📝 Detalhamento dos Feedbacks")
-        st.caption("Acompanhe o que os auditores disseram nas suas últimas ligações.")
+        st.caption("Acompanhe o que os auditores e líderes disseram nas suas últimas avaliações.")
         st.write("##")
 
         df_feed = meus_dados.sort_values(by="criado_em", ascending=False)
@@ -264,6 +264,17 @@ def render_meus_resultados():
             )
             avaliador = str(row.get("monitor_responsavel", "Sistema"))
             obs = str(row.get("observacoes", ""))
+            
+            # 👇 CORREÇÃO: Resgata e injeta o feedback do gestor (1:1)
+            resp_gestor = str(row.get("resposta_gestor", ""))
+            html_gestor = ""
+            if resp_gestor and resp_gestor.lower() not in ['nan', 'none', '']:
+                html_gestor = f"""
+                <div style="margin-top: 15px; padding: 12px; background-color: rgba(0, 230, 118, 0.1); border-left: 4px solid #00E676; border-radius: 8px;">
+                    <span style="font-size: 13px; font-weight: bold; color: #00E676; text-transform: uppercase; letter-spacing: 0.5px;">🎯 Plano de Ação do Gestor (1:1)</span><br>
+                    <span style="font-size: 14px; color: #eee; line-height: 1.5; display: inline-block; margin-top: 5px;">{resp_gestor}</span>
+                </div>
+                """
 
             # Layout em caixa de comentário premium
             st.markdown(
@@ -278,8 +289,9 @@ def render_meus_resultados():
                     </div>
                 </div>
                 <div style="font-size: 14px; color: #ddd; line-height: 1.5; font-style: {'italic' if not obs or obs == 'nan' else 'normal'};">
-                    {"💬 " + obs if obs and obs != 'nan' else "Sem observações registradas para esta avaliação."}
+                    {"💬 <b>Auditor:</b> " + obs if obs and obs != 'nan' else "Sem observações registradas para esta avaliação."}
                 </div>
+                {html_gestor}
             </div>
             """,
                 unsafe_allow_html=True,

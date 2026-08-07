@@ -139,10 +139,13 @@ def modal_abrir_contestacao(mon_row, id_sel, auditor_nome, foto_auditor, nome_co
                 }
 
                 supabase.table("contestacoes").insert(payload).execute()
+                
+                # 👇 CORREÇÃO NA AUDITORIA (Passando os 4 parâmetros corretamente)
                 registrar_auditoria(
                     "ABERTURA DE CONTESTAÇÃO",
                     f"Abriu contestação para a avaliação de {auditor_nome}.",
-                    nome_completo,
+                    nome_completo,     # Quem foi afetado (o próprio SDR)
+                    nome_completo      # Quem fez a ação (o próprio SDR)
                 )
 
                 try:
@@ -184,6 +187,9 @@ def modal_julgamento(
         st.error("Erro interno: Banco de dados desconectado.")
         return
     # --------------------------------------
+    
+    # Resgata o nome de quem está julgando
+    admin_logado = str(st.session_state.get('user_nome', 'Admin'))
 
     # -------------------------------------------------------------
     # 1. SEÇÃO DE ARGUMENTO (LARGURA TOTAL EM PILHA)
@@ -370,16 +376,20 @@ def modal_julgamento(
                     {"nota": nova_nota_final, "detalhes": detalhes_simulados}
                 ).eq("id", str(row["monitoria_id"])).execute()
 
+                # 👇 CORREÇÃO NA AUDITORIA (Admin logado é o 4º parâmetro)
                 registrar_auditoria(
                     "AJUSTE DE NOTA",
                     f"Nota recalculada de {nota_limpa}% para {nova_nota_final}% após defesa.",
                     nome_colaborador,
+                    admin_logado
                 )
 
+            # 👇 CORREÇÃO NA AUDITORIA
             registrar_auditoria(
                 "JULGAMENTO",
                 f"A contestação de {nome_colaborador} foi julgada como '{decisao}'.",
                 nome_colaborador,
+                admin_logado
             )
 
             try:

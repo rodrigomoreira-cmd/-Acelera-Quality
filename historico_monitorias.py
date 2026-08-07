@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from database import supabase, registrar_auditoria
+from database import supabase, registrar_auditoria, get_all_records_db
 from datetime import datetime
 import time
 
@@ -24,7 +24,7 @@ def render_historico_monitorias():
     with st.spinner("A carregar histórico..."):
         try:
             # Traz as últimas 100 monitorias ordenadas das mais recentes para as mais antigas
-            res = supabase.table("monitorias").select("*").order("criado_em", desc=True).limit(100).execute()
+            res = supabase.table("monitorias").select("*").order("criado_em", desc=True).limit(100).execute()  # type: ignore
             
             if not hasattr(res, 'data') or not res.data:
                 st.info("Nenhuma monitoria encontrada no banco de dados ainda.")
@@ -32,8 +32,9 @@ def render_historico_monitorias():
                 
             df_monitorias = pd.DataFrame(res.data)
             
-            # Formata a data para ficar bonita na tela (DD/MM/YYYY)
-            df_monitorias['data_formatada'] = pd.to_datetime(df_monitorias['data']).dt.strftime('%d/%m/%Y')
+            # Formata a data para ficar bonita na tela (DD/MM/YYYY) - Corrigido para 'criado_em'
+            col_data = 'criado_em' if 'criado_em' in df_monitorias.columns else 'data'
+            df_monitorias['data_formatada'] = pd.to_datetime(df_monitorias[col_data], errors='coerce').dt.strftime('%d/%m/%Y')
             
         except Exception as e:
             st.error(f"Erro ao buscar histórico: {e}")
@@ -102,7 +103,8 @@ def render_historico_monitorias():
         
         if isinstance(detalhes, dict):
             for chave, info in detalhes.items():
-                if info.get('nota') == "NC":
+                # 👇 CORREÇÃO: Pega todos os tipos de erros graves e não conformidades
+                if info.get('nota') in ["NC", "NGC", "NC Grave"]:
                     encontrou_erro = True
                     penalidade = info.get('penalidade_aplicada', 0)
                     with st.expander(f"⚠️ -{penalidade}% | {info.get('criterio', 'Critério não identificado')}"):
@@ -141,14 +143,17 @@ def render_historico_monitorias():
                             # 🎯 A MÁGICA ACONTECE AQUI: Atualiza apenas a coluna 'resposta_gestor' daquela monitoria específica!
                             supabase.table("monitorias").update({
                                 "resposta_gestor": str(novo_feedback).strip()
-                            }).eq("id", id_monitoria).execute()
+                            }).eq("id", id_monitoria).execute()  # type: ignore
                             
                             registrar_auditoria(
                                 "FEEDBACK GESTOR", 
                                 f"Registrou feedback para a monitoria de {monitoria_selecionada['sdr']}", 
-                                monitoria_selecionada['sdr'], 
+                                str(monitoria_selecionada['sdr']), 
                                 usuario_logado
                             )
+                            
+                            # 👇 CORREÇÃO: Limpa o cache para atualizar instantaneamente a aba de "Histórico Geral" e sumir a pendência
+                            get_all_records_db.clear()
                             
                             st.success("✅ Feedback salvo com sucesso!")
                             time.sleep(1.5)

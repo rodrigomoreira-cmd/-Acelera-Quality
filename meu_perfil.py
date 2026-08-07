@@ -316,6 +316,14 @@ def render_meu_perfil():
                             url = supabase.storage.from_("avatars").get_public_url(nome_arq)  # type: ignore
                             supabase.table("usuarios").update({"foto_url": url}).eq("id", meu_id).execute()  # type: ignore
 
+                            # 👇 Inserida a Auditoria aqui
+                            registrar_auditoria(
+                                "ALTERAÇÃO DE PERFIL", 
+                                "Usuário atualizou a própria foto de perfil.", 
+                                user_nome_exibicao, 
+                                user_nome_exibicao
+                            )
+
                             st.session_state["foto_url"] = url
                             st.success("Foto de perfil atualizada!")
                             time.sleep(1)
@@ -355,6 +363,15 @@ def render_meu_perfil():
                         h_dig = hash_password(s_at)
                         if h_dig == senha_banco or s_at.strip() == senha_banco:
                             supabase.table("usuarios").update({"senha": hash_password(s_nv)}).eq("id", meu_id).execute()  # type: ignore
+                            
+                            # 👇 Inserida a Auditoria aqui
+                            registrar_auditoria(
+                                "ALTERAÇÃO DE SENHA", 
+                                "Usuário alterou a própria senha de acesso via painel.", 
+                                user_nome_exibicao, 
+                                user_nome_exibicao
+                            )
+                            
                             st.success("Sua senha de acesso foi modificada!")
                             st.balloons()
                             time.sleep(1)

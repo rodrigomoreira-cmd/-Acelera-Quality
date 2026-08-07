@@ -8,6 +8,12 @@ def hash_password(password):
     return hashlib.sha256(str.encode(password.strip())).hexdigest()
 
 def render_cadastro():
+    # --- TRAVA ANTI-PYLANCE ---
+    if supabase is None:
+        st.error("Erro de conexão com o banco de dados.")
+        return
+    # ------------------------------------------------------------------
+
     st.title("👥 Cadastro de Novo Usuário")
     
     # Recupera o nível de quem está logado para aplicar a restrição
@@ -75,44 +81,47 @@ def render_cadastro():
             elif len(senha_pura.strip()) < 4:
                 st.error("⚠️ A senha deve ter no mínimo 4 caracteres.")
             else:
-                try:
-                    email_completo = f"{user_prefix.strip().lower()}@grupoacelerador.com.br"
-                    
-                    # Verifica duplicidade
-                    check = supabase.table("usuarios").select("user").eq("user", email_completo).execute()
-                    
-                    if check.data:
-                        st.error(f"❌ O usuário '{email_completo}' já existe.")
-                    else:
-                        senha_hash = hash_password(senha_pura)
-
-                        payload = {
-                            "nome": nome_completo.strip(),
-                            "user": email_completo,
-                            "email": email_completo,
-                            "senha": senha_hash,
-                            "telefone": telefone.strip() if telefone else None,
-                            "nivel": nivel_acesso,
-                            "departamento": departamento,
-                            "gestor_responsavel": gestor_escolhido if gestor_escolhido != "Sem Gestor" else None,
-                            "esta_ativo": True
-                        }
+                with st.spinner("Cadastrando usuário..."):
+                    try:
+                        email_completo = f"{user_prefix.strip().lower()}@grupoacelerador.com.br"
                         
-                        supabase.table("usuarios").insert(payload).execute()
-
-                        # Limpa o cache para o novo usuário aparecer nas listagens imediatamente
-                        get_all_records_db.clear()
-
-                        registrar_auditoria(
-                            acao="CADASTRO DE USUÁRIO",
-                            colaborador_afetado=nome_completo.strip(),
-                            detalhes=f"Criou '{email_completo}' | Nível: '{nivel_acesso}' | Dept: '{departamento}' | Gestor: '{gestor_escolhido}'."
-                        )
+                        # Verifica duplicidade
+                        check = supabase.table("usuarios").select("user").eq("user", email_completo).execute()
                         
-                        st.success(f"✅ {nome_completo.strip()} cadastrado com sucesso!")
-                        st.balloons()
-                        time.sleep(1)
-                        st.rerun()
-                        
-                except Exception as e:
-                    st.error(f"❌ Ocorreu um erro ao cadastrar: {e}")
+                        if check.data:
+                            st.error(f"❌ O usuário '{email_completo}' já existe.")
+                        else:
+                            senha_hash = hash_password(senha_pura)
+
+                            payload = {
+                                "nome": nome_completo.strip(),
+                                "user": email_completo,
+                                "email": email_completo,
+                                "senha": senha_hash,
+                                "telefone": telefone.strip() if telefone else None,
+                                "nivel": nivel_acesso,
+                                "departamento": departamento,
+                                "gestor_responsavel": gestor_escolhido if gestor_escolhido != "Sem Gestor" else None,
+                                "esta_ativo": True
+                            }
+                            
+                            supabase.table("usuarios").insert(payload).execute()
+
+                            # Limpa o cache para o novo usuário aparecer nas listagens imediatamente
+                            get_all_records_db.clear()
+
+                            # 👇 CORREÇÃO: Passando os parâmetros corretamente na ordem esperada para não quebrar a Auditoria
+                            registrar_auditoria(
+                                "CADASTRO DE USUÁRIO",
+                                f"Criou '{email_completo}' | Nível: '{nivel_acesso}' | Dept: '{departamento}' | Gestor: '{gestor_escolhido}'.",
+                                nome_completo.strip(),
+                                admin_logado
+                            )
+                            
+                            st.success(f"✅ {nome_completo.strip()} cadastrado com sucesso!")
+                            st.balloons()
+                            time.sleep(1.5)
+                            st.rerun()
+                            
+                    except Exception as e:
+                        st.error(f"❌ Ocorreu um erro ao cadastrar: {e}")
