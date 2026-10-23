@@ -28,7 +28,7 @@ def analisar_sentimento_texto(texto):
                     "content": texto,
                 }
             ],
-            model="llama-3.1-8b-instant", 
+            model="llama-3.3-70b-versatile", # 👈 Vírgula adicionada aqui
             temperature=0.2, 
         )
 
@@ -74,7 +74,7 @@ def sugerir_pdi_ia(itens_reprovados, departamento):
         
         chat_completion = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
-            model="llama-3.1-8b-instant",
+            model="llama-3.3-70b-versatile", # 👈 Atualizado para o modelo ativo
             temperature=0.6,
         )
         return chat_completion.choices[0].message.content
@@ -104,7 +104,7 @@ def analisar_clima_lideranca(texto):
         
         chat_completion = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
-            model="llama-3.1-8b-instant",
+            model="llama-3.3-70b-versatile", # 👈 Atualizado para o modelo ativo
             temperature=0.1, 
         )
         res_ia = chat_completion.choices[0].message.content

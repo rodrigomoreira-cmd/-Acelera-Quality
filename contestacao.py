@@ -4,13 +4,9 @@ import numpy as np
 import time
 import pytz
 import copy
+import json
 from datetime import datetime
 from database import supabase, get_all_records_db, registrar_auditoria
-
-# --- IMPORT DA IA AQUI ---
-from analise_ia import analisar_sentimento_texto
-# -------------------------
-
 
 # ===================================================================
 # 🎨 1. MODAL DO COLABORADOR (ABRIR CONTESTAÇÃO)
@@ -77,13 +73,17 @@ def modal_abrir_contestacao(mon_row, id_sel, auditor_nome, foto_auditor, nome_co
                     comentario = info.get(
                         "comentario", "Nenhuma justificativa fornecida pelo auditor."
                     )
+                    
+                    texto_criterio = info.get("criterio", item)
+                    peso_aplicado = info.get("penalidade_aplicada", 0)
 
                     html_erro = f"""
                     <div style="padding: 12px; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; margin-bottom: 15px; background-color: rgba(0,0,0,0.1);">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
-                            <strong style="font-size: 15px; display: flex; align-items: center; gap: 6px;">❌ {item}</strong>
+                            <strong style="font-size: 15px; display: flex; align-items: center; gap: 6px;">❌ {texto_criterio}</strong>
                             <div>
                                 <span style="background-color: {cor_badge}; color: #fff; padding: 3px 8px; border-radius: 12px; font-size: 12px; font-weight: bold;">{n}</span>
+                                <span style="background-color: #444; color: #fff; padding: 3px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; margin-left: 4px;">-{peso_aplicado} pts</span>
                             </div>
                         </div>
                         <div style="font-size: 14px; font-style: italic; color: #aaa; margin-top: 5px;">"{comentario}"</div>
@@ -114,6 +114,13 @@ def modal_abrir_contestacao(mon_row, id_sel, auditor_nome, foto_auditor, nome_co
         key=f"txt_motivo_{id_sel}",
     )
 
+    arquivos_defesa = st.file_uploader(
+        "📸 Anexar Evidências da Defesa (Opcional):",
+        type=["png", "jpg", "jpeg"],
+        accept_multiple_files=True,
+        key=f"file_defesa_{id_sel}"
+    )
+
     if st.button(
         "🚀 Enviar Defesa",
         type="primary",
@@ -124,40 +131,50 @@ def modal_abrir_contestacao(mon_row, id_sel, auditor_nome, foto_auditor, nome_co
             st.error("⚠️ Escreva uma justificativa clara (mínimo de 10 caracteres).")
         else:
             try:
-                with st.spinner("🤖 Analisando argumentos com IA..."):
-                    sent_ia, res_ia = analisar_sentimento_texto(motivo_sdr)
+                with st.spinner("🔄 Processando defesa e enviando arquivos..."):
+                    urls_evidencias_sdr = []
+                    if arquivos_defesa:
+                        for idx_arq, arq in enumerate(arquivos_defesa):
+                            ext = arq.name.split(".")[-1]
+                            nome_arq = f"cont_{id_sel}_{int(time.time())}_{idx_arq}.{ext}"
+                            try:
+                                supabase.storage.from_("evidencias").upload(nome_arq, arq.getvalue(), file_options={"content-type": f"image/{ext}"}) # type: ignore
+                                public_url = supabase.storage.from_("evidencias").get_public_url(nome_arq) # type: ignore
+                                urls_evidencias_sdr.append(public_url)
+                            except Exception as up_e:
+                                print(f"Erro no upload da defesa: {up_e}")
 
-                payload = {
-                    "monitoria_id": id_sel,
-                    "motivo": motivo_sdr,
-                    "status": "Pendente",
-                    "resposta_admin": "",
-                    "visualizada": False,
-                    "sentimento_ia": sent_ia,
-                    "resumo_ia": res_ia,
-                    "sdr_nome": nome_completo,
-                }
+                    payload = {
+                        "monitoria_id": id_sel,
+                        "motivo": motivo_sdr,
+                        "status": "Pendente",
+                        "resposta_admin": "",
+                        "visualizada": False,
+                        "sentimento_ia": "Sem IA", 
+                        "resumo_ia": "",
+                        "sdr_nome": nome_completo,
+                        "evidencias_sdr": urls_evidencias_sdr
+                    }
 
-                supabase.table("contestacoes").insert(payload).execute()
-                
-                # 👇 CORREÇÃO NA AUDITORIA (Passando os 4 parâmetros corretamente)
-                registrar_auditoria(
-                    "ABERTURA DE CONTESTAÇÃO",
-                    f"Abriu contestação para a avaliação de {auditor_nome}.",
-                    nome_completo,     # Quem foi afetado (o próprio SDR)
-                    nome_completo      # Quem fez a ação (o próprio SDR)
-                )
+                    supabase.table("contestacoes").insert(payload).execute() # type: ignore
+                    
+                    registrar_auditoria(
+                        "ABERTURA DE CONTESTAÇÃO",
+                        f"Abriu contestação para a avaliação de {auditor_nome}.",
+                        nome_completo,
+                        nome_completo
+                    )
 
-                try:
-                    supabase.table("notificacoes").insert(
-                        {
-                            "usuario": auditor_nome,
-                            "mensagem": f"⚖️ {nome_completo} abriu um ticket de contestação referente à sua avaliação.",
-                            "lida": False,
-                        }
-                    ).execute()
-                except:
-                    pass
+                    try:
+                        supabase.table("notificacoes").insert(
+                            {
+                                "usuario": auditor_nome,
+                                "mensagem": f"⚖️ {nome_completo} abriu um ticket de contestação referente à sua avaliação.",
+                                "lida": False,
+                            }
+                        ).execute() # type: ignore
+                    except:
+                        pass
 
                 st.success("✅ Defesa enviada com sucesso para a equipe de qualidade!")
                 time.sleep(1.5)
@@ -188,7 +205,6 @@ def modal_julgamento(
         return
     # --------------------------------------
     
-    # Resgata o nome de quem está julgando
     admin_logado = str(st.session_state.get('user_nome', 'Admin'))
 
     # -------------------------------------------------------------
@@ -199,6 +215,24 @@ def modal_julgamento(
 
     with st.chat_message("user"):
         st.write(row["motivo"])
+        
+        evids_sdr = row.get("evidencias_sdr")
+        if isinstance(evids_sdr, str):
+            try:
+                evids_sdr = json.loads(evids_sdr)
+            except:
+                evids_sdr = []
+        elif not isinstance(evids_sdr, list):
+            evids_sdr = []
+
+        if evids_sdr:
+            st.write("---")
+            st.markdown("**📸 Evidências anexadas na defesa:**")
+            cols_img = st.columns(min(len(evids_sdr), 3))
+            for idx_img, url_img in enumerate(evids_sdr):
+                with cols_img[idx_img % 3]:
+                    with st.expander(f"Imagem {idx_img + 1}"):
+                        st.image(url_img, use_container_width=True)
 
     if pd.notna(resumo_ia) and str(resumo_ia).strip() != "":
         st.caption(f"🧠 **Resumo IA ({tag_ia}):** _{resumo_ia}_")
@@ -238,7 +272,9 @@ def modal_julgamento(
                 erros_originais.append(item)
 
                 n = d_info.get("nota", "NC")
-                peso_real = mapa_pesos.get(item.strip(), 0)
+                
+                texto_criterio = d_info.get("criterio", item)
+                peso_real = d_info.get("penalidade_aplicada", mapa_pesos.get(item.strip(), 0))
 
                 cor_badge = (
                     "#ff4b4b"
@@ -250,7 +286,7 @@ def modal_julgamento(
                 html_erro = f"""
                 <div style="padding: 10px; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; margin-bottom: 10px; background-color: rgba(0,0,0,0.1);">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-                        <strong style="font-size: 14px;">❌ {item}</strong>
+                        <strong style="font-size: 14px;">❌ {texto_criterio}</strong>
                     </div>
                     <div style="margin-bottom: 8px;">
                         <span style="background-color: {cor_badge}; color: #fff; padding: 2px 6px; border-radius: 12px; font-size: 11px; font-weight: bold;">{n}</span>
@@ -293,7 +329,9 @@ def modal_julgamento(
         for idx, item in enumerate(erros_originais):
             info_op = det_auditor.get(item, {})
             tipo_op = info_op.get("nota", "NC")
-            peso_real = mapa_pesos.get(item.strip(), 0)
+            
+            texto_criterio = info_op.get("criterio", item)
+            peso_real = info_op.get("penalidade_aplicada", mapa_pesos.get(item.strip(), 0))
 
             cor_badge = (
                 "#ff4b4b"
@@ -308,7 +346,7 @@ def modal_julgamento(
                 c1, c2 = st.columns([4, 1])
                 with c1:
                     st.markdown(
-                        f"<div style='font-size: 14px; font-weight: 600; margin-bottom: 5px; color: #eee;'>{item}</div>",
+                        f"<div style='font-size: 14px; font-weight: 600; margin-bottom: 5px; color: #eee;'>{texto_criterio}</div>",
                         unsafe_allow_html=True,
                     )
                     st.markdown(
@@ -338,7 +376,7 @@ def modal_julgamento(
                     if status_atual == "NGC":
                         zerou_nota = True
                     else:
-                        peso_bd = mapa_pesos.get(item_nome.strip(), 0)
+                        peso_bd = info_item.get("penalidade_aplicada", mapa_pesos.get(item_nome.strip(), 0))
                         nota_recalculada -= peso_bd
 
         if zerou_nota:
@@ -369,14 +407,13 @@ def modal_julgamento(
         try:
             supabase.table("contestacoes").update(
                 {"status": decisao, "resposta_admin": feedback}
-            ).eq("id", id_cont_limpo).execute()
+            ).eq("id", id_cont_limpo).execute() # type: ignore
 
             if decisao == "Aceita":
                 supabase.table("monitorias").update(
                     {"nota": nova_nota_final, "detalhes": detalhes_simulados}
-                ).eq("id", str(row["monitoria_id"])).execute()
+                ).eq("id", str(row["monitoria_id"])).execute() # type: ignore
 
-                # 👇 CORREÇÃO NA AUDITORIA (Admin logado é o 4º parâmetro)
                 registrar_auditoria(
                     "AJUSTE DE NOTA",
                     f"Nota recalculada de {nota_limpa}% para {nova_nota_final}% após defesa.",
@@ -384,7 +421,6 @@ def modal_julgamento(
                     admin_logado
                 )
 
-            # 👇 CORREÇÃO NA AUDITORIA
             registrar_auditoria(
                 "JULGAMENTO",
                 f"A contestação de {nome_colaborador} foi julgada como '{decisao}'.",
@@ -399,7 +435,7 @@ def modal_julgamento(
                         "mensagem": f"⚖️ Sua contestação foi julgada como: {decisao}. Verifique a aba de Contestações.",
                         "lida": False,
                     }
-                ).execute()
+                ).execute() # type: ignore
 
                 if decisao == "Aceita":
                     supabase.table("notificacoes").insert(
@@ -408,7 +444,7 @@ def modal_julgamento(
                             "mensagem": f"🎖️ PARABÉNS! Sua contestação foi aceita. Nova Nota Final: {nova_nota_final}%",
                             "lida": False,
                         }
-                    ).execute()
+                    ).execute() # type: ignore
             except:
                 pass
 
@@ -496,13 +532,11 @@ def render_contestacao():
         hoje = datetime.now(fuso)
         
         # --- CÁLCULO DE DIAS ÚTEIS (EXCLUI SÁBADO E DOMINGO) ---
-        # Removemos registros sem data para evitar falhas no cálculo matemático do numpy
         minhas_monitorias = minhas_monitorias.dropna(subset=["criado_em"])
         
         datas_criacao = minhas_monitorias["criado_em"].dt.date.values.astype('datetime64[D]')
         hoje_np = np.datetime64(hoje.date())
         
-        # Conta a quantidade exata de dias úteis passados
         minhas_monitorias["dias_passados"] = np.busday_count(datas_criacao, hoje_np)
         # -------------------------------------------------------
 
