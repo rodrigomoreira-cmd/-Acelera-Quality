@@ -11,7 +11,7 @@ def render_gestao_criterios():
     # ------------------------------------------------------------------
 
     # 🎨 PALETA DE CORES SISTÊMICA
-    COR_PRINCIPAL = "#FF7A00"  # Laranja vibrante principal
+    COR_PRINCIPAL = "#FF7A00"  
     COR_TEXTO = "#A0AEC0"
 
     st.markdown(
@@ -24,7 +24,6 @@ def render_gestao_criterios():
 
     usuario_logado = str(st.session_state.get("user_nome", "Sistema"))
     
-    # 👇 PUXA O FILTRO DA BARRA LATERAL
     dept_logado = str(st.session_state.get("departamento_selecionado", "Todos"))
 
     OPCOES_DEPARTAMENTO = [
@@ -37,7 +36,6 @@ def render_gestao_criterios():
         "Todos",
     ]
     
-    # Define o índice padrão baseado no filtro global da sidebar
     indice_dept_padrao = OPCOES_DEPARTAMENTO.index(dept_logado) if dept_logado in OPCOES_DEPARTAMENTO else len(OPCOES_DEPARTAMENTO) - 1
 
     # ==========================================================
@@ -58,13 +56,11 @@ def render_gestao_criterios():
                 c_nome, c_versao, c_perfil = st.columns([2, 1, 1])
                 nome_modelo = c_nome.text_input("Nome do Checklist", placeholder="Ex: Avaliação Outbound")
                 versao_modelo = c_versao.text_input("Versão", placeholder="Ex: v1.0")
-                # Já vem pré-preenchido com o filtro global:
                 perfil_modelo = c_perfil.selectbox("Perfil Alvo", OPCOES_DEPARTAMENTO, index=indice_dept_padrao)
 
                 st.markdown("#### 📋 Perguntas do Checklist")
                 st.caption("Adicione ou edite as linhas abaixo. Linhas com a pergunta vazia serão ignoradas automaticamente.")
                 
-                # Tabela inicial vazia para o gestor preencher
                 df_perguntas_base = pd.DataFrame([
                     {"Grupo": "N1", "Pergunta": "", "Peso": 1, "Fatal": False},
                     {"Grupo": "N1", "Pergunta": "", "Peso": 1, "Fatal": False},
@@ -73,12 +69,13 @@ def render_gestao_criterios():
                     {"Grupo": "N3", "Pergunta": "", "Peso": 7, "Fatal": False},
                 ])
 
+                # 👇 AQUI: Coluna "Peso" virou NumberColumn para pontos livres
                 df_editado = st.data_editor(
                     df_perguntas_base,
                     column_config={
                         "Grupo": st.column_config.SelectboxColumn("Nível (Aba)", options=["N1", "N2", "N3"], required=True),
                         "Pergunta": st.column_config.TextColumn("Critério / Pergunta", width="large"),
-                        "Peso": st.column_config.SelectboxColumn("Penalidade (%)", options=[1, 3, 7], required=True),
+                        "Peso": st.column_config.NumberColumn("Pontos a Descontar", min_value=1, step=1, required=True),
                         "Fatal": st.column_config.CheckboxColumn("Zera Nota? (Fatal)"),
                     },
                     num_rows="dynamic",
@@ -123,7 +120,6 @@ def render_gestao_criterios():
         st.caption("Edite os critérios, altere notas, adicione regras fatais ou ative/desative os formulários.")
         
         try:
-            # APLICAÇÃO DO FILTRO GLOBAL NA BUSCA DOS MODELOS
             query_modelos = supabase.table("modelos_checklist").select("*").order("criado_em", desc=True)
             if dept_logado != "Todos":
                 query_modelos = query_modelos.eq("perfil", dept_logado)
@@ -135,31 +131,27 @@ def render_gestao_criterios():
                     status_txt = "🟢 ATIVO" if mod['ativo'] else "🔴 INATIVO"
                     with st.expander(f"{status_txt} | {mod['nome']} (Versão: {mod['versao']}) - Perfil: {mod['perfil']}"):
                         
-                        # Garante que as colunas existam mesmo se o JSON estiver incompleto
                         df_display = pd.DataFrame(mod['perguntas'])
                         
-                        # AQUI ESTÁ A MÁGICA: st.data_editor permite editar direto na tela
+                        # 👇 AQUI: Coluna "Peso" virou NumberColumn na edição retroativa também
                         df_checklist_editado = st.data_editor(
                             df_display,
                             column_config={
                                 "Grupo": st.column_config.SelectboxColumn("Nível (Aba)", options=["N1", "N2", "N3"], required=True),
                                 "Pergunta": st.column_config.TextColumn("Critério / Pergunta", width="large"),
-                                "Peso": st.column_config.SelectboxColumn("Penalidade (%)", options=[1, 3, 7, 10, 20, 50, 100], required=True),
+                                "Peso": st.column_config.NumberColumn("Pontos a Descontar", min_value=1, step=1, required=True),
                                 "Fatal": st.column_config.CheckboxColumn("Zera Nota? (Fatal)"),
                             },
-                            num_rows="dynamic", # Permite adicionar/remover linhas
+                            num_rows="dynamic", 
                             use_container_width=True,
                             hide_index=True,
-                            key=f"editor_checklist_{mod['id']}" # A key única é vital para não dar erro no Streamlit
+                            key=f"editor_checklist_{mod['id']}" 
                         )
                         
                         st.write("")
-                        
-                        # Reorganizando as colunas para acomodar o botão de salvar
                         col_save, col_toggle, col_delete = st.columns([1.5, 2.5, 1])
                         
                         with col_save:
-                            # Botão para salvar as edições das perguntas
                             if st.button("💾 Atualizar Critérios", key=f"save_{mod['id']}", type="secondary", use_container_width=True):
                                 df_valido = df_checklist_editado[df_checklist_editado["Pergunta"].astype(str).str.strip() != ""]
                                 
@@ -218,7 +210,6 @@ def render_gestao_criterios():
                         "Nome da Soft Skill",
                         placeholder="Ex: Inteligência Emocional, Resiliência...",
                     )
-                    # Já vem pré-preenchido com o filtro global:
                     dept_pdi = c_dept_pdi.selectbox("Departamento", OPCOES_DEPARTAMENTO, index=indice_dept_padrao)
 
                     desc_pdi = st.text_area(

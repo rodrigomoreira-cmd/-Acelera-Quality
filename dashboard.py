@@ -39,6 +39,19 @@ def render_dashboard():
     df = df.dropna(subset=["criado_em"])
     df = df.sort_values(by="criado_em")
 
+    # 👇 AQUI: Função para somar as penalidades de cada avaliação
+    def calc_perdidos(detalhes):
+        p = 0
+        if isinstance(detalhes, dict):
+            for k, info in detalhes.items():
+                if isinstance(info, dict):
+                    n = str(info.get("nota", ""))
+                    if "NC" in n or "NGC" in n:
+                        p += int(info.get("penalidade_aplicada", 0))
+        return p
+
+    df["pontos_perdidos"] = df["detalhes"].apply(calc_perdidos)
+
     # 🛡️ TRAVA DE SEGURANÇA: OCULTAR ADMIN MESTRE
     if nivel_usuario != "ADMIN":
         df = df[
@@ -74,10 +87,13 @@ def render_dashboard():
 
         hoje = datetime.now().date()
         data_min = df["criado_em"].min().date()
-        inicio_padrao = max(data_min, hoje - timedelta(days=30))
+        
+        # Como o pote é mensal, o padrão de visualização vai ser o 1º dia do mês até hoje
+        inicio_mes_atual = hoje.replace(day=1)
+        inicio_padrao = max(data_min, inicio_mes_atual)
 
         intervalo_datas = c2.date_input(
-            "Selecione o Período:", value=(inicio_padrao, hoje), max_value=hoje
+            "Selecione o Período (Pote de 100 pts):", value=(inicio_padrao, hoje), max_value=hoje
         )
 
     # ==========================================================
@@ -104,7 +120,10 @@ def render_dashboard():
         return
 
     ids_filtrados = df_filtrado["id"].tolist()
-    media_nota = df_filtrado["nota"].mean()
+    
+    # 👇 AQUI: Cálculo da Pontuação pelo método Acumulativo (Pote 100)
+    total_perdido_periodo = df_filtrado["pontos_perdidos"].sum()
+    nota_periodo = 100 - total_perdido_periodo
 
     # KPIS
     falhas_criticas = len(df_filtrado[df_filtrado["nota"] == 0])
@@ -136,9 +155,6 @@ def render_dashboard():
     # ==========================================================
     with aba_sdr:
 
-        # ----------------------------------------------------------
-        # 1. SEÇÃO SUPERIOR: MÉTRICAS TIPO CARDS
-        # ----------------------------------------------------------
         if nivel_usuario not in ["ADMIN", "GESTAO", "AUDITOR", "GERENCIA"]:
             st.markdown("### Suas Entregas Pessoais")
         else:
@@ -171,13 +187,16 @@ def render_dashboard():
         with m2:
             cor_nota = (
                 COR_SUCESSO
-                if media_nota >= 90
-                else (COR_SECUNDARIA if media_nota >= 70 else COR_PRINCIPAL)
+                if nota_periodo >= 90
+                else (COR_SECUNDARIA if nota_periodo >= 70 else COR_PRINCIPAL)
             )
-            sub_nota = f"Meta: 90% | {'Atingida' if media_nota >= 90 else 'Abaixo'}"
+            # Se a nota ficar negativa, muda de cor e alerta visualmente
+            cor_nota = "#ff4b4b" if nota_periodo < 0 else cor_nota
+            
+            sub_nota = f"Acumulado (-{total_perdido_periodo} pts perdidos)"
             st.markdown(
                 render_kpi_card(
-                    "Qualidade Média", f"{media_nota:.1f}%", sub_nota, "🎯", cor_nota
+                    "Pontuação (Pote)", f"{nota_periodo} pts", sub_nota, "🏆", cor_nota
                 ),
                 unsafe_allow_html=True,
             )
@@ -185,7 +204,7 @@ def render_dashboard():
             cor_falha = COR_PRINCIPAL if taxa_falhas_criticas > 15 else COR_SUCESSO
             st.markdown(
                 render_kpi_card(
-                    "Falha Crítica (Nota 0)",
+                    "Falhas Fatais (Zero)",
                     f"{taxa_falhas_criticas:.1f}%",
                     f"{falhas_criticas} avaliações zeradas",
                     "⚠️",
@@ -216,19 +235,21 @@ def render_dashboard():
         ) or (sdr_escolhido == "Ver Todos")
 
         if mostrar_ranking:
-            st.markdown("### Top 3 Performance")
+            st.markdown("### Top 3 Performance (Pote Acumulado)")
 
+            # 👇 AQUI: Agrupa o ranking pelo Pote de 100 pontos
             ranking = (
                 df_ranking_base.groupby("sdr")
-                .agg(nota_media=("nota", "mean"), qtd_mon=("id", "count"))
+                .agg(pontos_perdidos_totais=("pontos_perdidos", "sum"), qtd_mon=("id", "count"))
                 .reset_index()
             )
+            ranking["nota_final_pote"] = 100 - ranking["pontos_perdidos_totais"]
 
             MINIMO_MONITORIAS = 3
             ranking = ranking[ranking["qtd_mon"] >= MINIMO_MONITORIAS]
 
             ranking = ranking.sort_values(
-                by=["nota_media", "qtd_mon"],
+                by=["nota_final_pote", "qtd_mon"],
                 ascending=[False, False],
             ).reset_index(drop=True)
 
@@ -238,9 +259,8 @@ def render_dashboard():
                 )
             else:
                 col_rank = st.columns(3)
-                # Adicionado Emojis e Texto Mais Forte para Ênfase
                 medalhas = ["🥇 1º LUGAR", "🥈 2º LUGAR", "🥉 3º LUGAR"]
-                cores_podio = [COR_SECUNDARIA, "#C0C0C0", "#CD7F32"]
+                cores_podio = [COR_SUCESSO, "#C0C0C0", "#CD7F32"] # Dourado trocado para Verde (Sucesso)
 
                 for idx, (_, row) in enumerate(ranking.head(3).iterrows()):
                     try:
@@ -259,11 +279,11 @@ def render_dashboard():
                             if foto_sdr
                             else f'<div style="width: 75px; height: 75px; border-radius: 50%; border: 3px solid {cores_podio[idx]}; margin: 0 auto; display: flex; align-items: center; justify-content: center; font-size: 40px; background-color: rgba(255,255,255,0.05); color: {cores_podio[idx]}; line-height: 1;">👤</div>'
                         )
+                        
+                        cor_texto_nota = "#ff4b4b" if row['nota_final_pote'] < 0 else "#fff"
 
-                        # HTML BLINDADO (Sem linhas vazias para não quebrar no Streamlit)
-                        # O bloco do Nome (height: 65px) trava a altura para alinhar a nota embaixo perfeitamente!
                         st.markdown(
-                            f"""<div style="background-color: rgba(255,255,255,0.02); padding: 25px 15px; border-radius: 12px; border-top: 4px solid {cores_podio[idx]}; text-align: center; box-shadow: 0 6px 15px rgba(0,0,0,0.2);"><div style="margin-bottom: 20px;"><span style="background-color: {cores_podio[idx]}20; color: {cores_podio[idx]}; padding: 6px 15px; border-radius: 20px; font-size: 14px; font-weight: 900; letter-spacing: 1px; border: 1px solid {cores_podio[idx]}50; box-shadow: 0 0 10px {cores_podio[idx]}40;">{medalhas[idx]}</span></div><div style="height: 85px; display: flex; justify-content: center; align-items: center;">{foto_html}</div><div style="height: 65px; display: flex; flex-direction: column; justify-content: flex-start; align-items: center; overflow: hidden;"><b style="font-size: 16px; color: #fff; line-height: 1.2;">{row['sdr']}</b><span style="color: #888; font-size: 12px; margin-top: 4px;">{row['qtd_mon']} avaliações</span></div><div style="margin-top: 10px;"><h2 style="color: #fff; margin: 0; font-size: 32px; font-weight: 800;">{row['nota_media']:.1f}%</h2></div></div>""",
+                            f"""<div style="background-color: rgba(255,255,255,0.02); padding: 25px 15px; border-radius: 12px; border-top: 4px solid {cores_podio[idx]}; text-align: center; box-shadow: 0 6px 15px rgba(0,0,0,0.2);"><div style="margin-bottom: 20px;"><span style="background-color: {cores_podio[idx]}20; color: {cores_podio[idx]}; padding: 6px 15px; border-radius: 20px; font-size: 14px; font-weight: 900; letter-spacing: 1px; border: 1px solid {cores_podio[idx]}50; box-shadow: 0 0 10px {cores_podio[idx]}40;">{medalhas[idx]}</span></div><div style="height: 85px; display: flex; justify-content: center; align-items: center;">{foto_html}</div><div style="height: 65px; display: flex; flex-direction: column; justify-content: flex-start; align-items: center; overflow: hidden;"><b style="font-size: 16px; color: #fff; line-height: 1.2;">{row['sdr']}</b><span style="color: #888; font-size: 12px; margin-top: 4px;">{row['qtd_mon']} avaliações</span></div><div style="margin-top: 10px;"><h2 style="color: {cor_texto_nota}; margin: 0; font-size: 32px; font-weight: 800;">{row['nota_final_pote']} pts</h2></div></div>""",
                             unsafe_allow_html=True,
                         )
 
@@ -274,9 +294,10 @@ def render_dashboard():
                             ranking,
                             column_config={
                                 "sdr": "Nome do Colaborador",
-                                "nota_media": st.column_config.NumberColumn(
-                                    "Média de Qualidade", format="%.1f%%"
+                                "nota_final_pote": st.column_config.NumberColumn(
+                                    "Pontuação Pote (Base 100)", format="%d pts"
                                 ),
+                                "pontos_perdidos_totais": "Total Descontado",
                                 "qtd_mon": "Total de Avaliações",
                             },
                             use_container_width=True,
@@ -291,10 +312,10 @@ def render_dashboard():
 
         with col_dist:
             st.markdown(
-                "<h4 style='text-align: left; font-size: 15px; color: #eee;'>Curva de Distribuição de Qualidade</h4>",
+                "<h4 style='text-align: left; font-size: 15px; color: #eee;'>Curva de Distribuição de Notas (Individuais)</h4>",
                 unsafe_allow_html=True,
             )
-            st.caption("Volume de avaliações separadas por faixas de notas.")
+            st.caption("Qual a nota que a equipe costuma tirar por ligação/card individual.")
 
             fig_dist = px.histogram(
                 df_filtrado,
@@ -392,31 +413,38 @@ def render_dashboard():
     # ==========================================================
     with aba_ofensores:
 
-        # --- EVOLUÇÃO NO TEMPO (LINHA SUAVE LARANJA) ---
-        st.markdown("### Evolução Histórica")
+        # 👇 AQUI: EVOLUÇÃO NO TEMPO (ACUMULADA NEGATIVA BASE 100)
+        st.markdown("### 📉 Evolução do Pote de Pontos")
+        st.caption("Demonstração gráfica de como os 100 pontos iniciais caíram ao longo do período filtrado (acumulado diário).")
 
         df_evolucao = df_filtrado.copy()
         df_evolucao["DataCurta"] = df_evolucao["criado_em"].dt.date
+        
+        # Agrupa os pontos perdidos no dia
         df_agrupado = (
             df_evolucao.groupby("DataCurta")
-            .agg(nota_media=("nota", "mean"))
+            .agg(perdido_dia=("pontos_perdidos", "sum"))
             .reset_index()
         )
+        
+        # Faz a subtração cumulativa a partir dos 100 pontos
+        df_agrupado["nota_acumulada"] = 100 - df_agrupado["perdido_dia"].cumsum()
 
         fig_evolucao = px.area(
             df_agrupado,
             x="DataCurta",
-            y="nota_media",
+            y="nota_acumulada",
             markers=True,
-            labels={"DataCurta": "", "nota_media": "Média de Nota (%)"},
+            labels={"DataCurta": "", "nota_acumulada": "Pontuação Acumulada"},
         )
         fig_evolucao.update_traces(
             line_color=COR_PRINCIPAL,
             line_shape="spline",
             fillcolor="rgba(255, 122, 0, 0.1)",
         )
+        # Permite ver a queda abaixo de 0 com linha de marcação vermelha
         fig_evolucao.update_yaxes(
-            range=[0, 105], showgrid=True, gridcolor=COR_LINHA_GRADE, zeroline=False
+            showgrid=True, gridcolor=COR_LINHA_GRADE, zeroline=True, zerolinecolor="#ff4b4b", title="Pontos Sobrantes"
         )
         fig_evolucao.update_xaxes(showgrid=False, zeroline=False)
         fig_evolucao.update_layout(
@@ -564,7 +592,7 @@ def render_dashboard():
 
             produtividade_auditor = (
                 df_filtrado.groupby("monitor_responsavel")
-                .agg(qtd_avaliacoes=("id", "count"), nota_media_dada=("nota", "mean"))
+                .agg(qtd_avaliacoes=("id", "count"))
                 .reset_index()
                 .sort_values(by="qtd_avaliacoes", ascending=True)
             )

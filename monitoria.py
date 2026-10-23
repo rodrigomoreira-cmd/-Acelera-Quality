@@ -17,7 +17,6 @@ def render_nova_monitoria():
 
     auditor_nome = st.session_state.get("user_nome", "Auditor Desconhecido")
     
-    # 👇 PUXA O FILTRO DA BARRA LATERAL
     dept_logado = str(st.session_state.get("departamento_selecionado", "Todos"))
 
     # ==========================================================
@@ -27,11 +26,9 @@ def render_nova_monitoria():
     lista_avaliados = []
     
     if df_usuarios is not None and not df_usuarios.empty:
-        # Filtra apenas ativos
         if 'ativo' in df_usuarios.columns:
             df_usuarios = df_usuarios[df_usuarios['ativo'].astype(str).str.lower().isin(['true', '1', 't', 'yes', 'sim'])]
             
-        # 👇 FILTRA PELO DEPARTAMENTO DA SIDEBAR
         if dept_logado != "Todos" and 'departamento' in df_usuarios.columns:
             df_usuarios = df_usuarios[df_usuarios['departamento'].astype(str).str.upper() == dept_logado.upper()]
             
@@ -40,11 +37,9 @@ def render_nova_monitoria():
             
     lista_avaliados = lista_avaliados if lista_avaliados else ["Nenhum usuário ativo encontrado no filtro atual"]
 
-    # Busca Modelos Ativos na nova tabela
     try:
         query_modelos = supabase.table("modelos_checklist").select("*").eq("ativo", True)
         
-        # 👇 FILTRA OS MODELOS PELO DEPARTAMENTO DA SIDEBAR
         if dept_logado != "Todos":
             query_modelos = query_modelos.eq("perfil", dept_logado)
             
@@ -126,10 +121,10 @@ def render_nova_monitoria():
                             st.error(f"🚨 ERRO FATAL: A nota será zerada.")
                             zerou_monitoria = True
                         else:
-                            st.warning(f"⚠️ Penalidade de -{peso_penalidade}% será aplicada.")
+                            # 👇 AQUI: Trocado % por pontos
+                            st.warning(f"⚠️ Penalidade de -{peso_penalidade} pontos será aplicada.")
                         
                         comentario = st.text_area("Motivo da Não Conformidade (Obrigatório):", key=key_obs)
-                        # 👇 HABILITADO PARA MÚLTIPLOS ARQUIVOS
                         evidencias = st.file_uploader("📸 Anexar Evidências (Opcional)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key=key_file)
                         penalidade_acumulada += peso_penalidade
                         
@@ -140,7 +135,7 @@ def render_nova_monitoria():
                         "nota": nota_tag,
                         "comentario": comentario,
                         "penalidade_aplicada": 100 if (status == "NC" and eh_fatal) else (peso_penalidade if status == "NC" else 0),
-                        "evidencias_obj": evidencias # Agora guarda a lista inteira
+                        "evidencias_obj": evidencias 
                     }
         return penalidade_acumulada
 
@@ -160,8 +155,8 @@ def render_nova_monitoria():
         st.markdown(
             f"""
             <div style="background-color: {cor_nota}22; border: 2px solid {cor_nota}; padding: 20px; border-radius: 10px; text-align: center;">
-                <h3 style="margin:0; color: {cor_nota};">Índice de Qualidade</h3>
-                <h1 style="margin:0; font-size: 48px; color: {cor_nota};">{nota_final}%</h1>
+                <h3 style="margin:0; color: {cor_nota};">Pontuação Obtida</h3>
+                <h1 style="margin:0; font-size: 48px; color: {cor_nota};">{nota_final} pts</h1>
             </div>
             """, unsafe_allow_html=True
         )
@@ -188,7 +183,7 @@ def render_nova_monitoria():
                     evs_objs = v.pop("evidencias_obj", []) 
                     v["evidencia_anexada"] = False
                     v["url_arquivo"] = None
-                    v["url_arquivos"] = [] # Nova lista para múltiplas imagens
+                    v["url_arquivos"] = [] 
                     
                     if evs_objs:
                         for idx_ev, ev_obj in enumerate(evs_objs):
@@ -201,10 +196,8 @@ def render_nova_monitoria():
                             except Exception as up_e:
                                 print(f"Erro no upload da evidência: {up_e}")
 
-                        # Se subiu com sucesso pelo menos uma
                         if v["url_arquivos"]:
                             v["evidencia_anexada"] = True
-                            # Mantém retrocompatibilidade para o sistema atual ler a 1ª foto
                             v["url_arquivo"] = v["url_arquivos"][0] 
 
                 payload = {
@@ -227,7 +220,7 @@ def render_nova_monitoria():
                 if hasattr(resposta, "data") and resposta.data:
                     msg_notificacao = f"Sua avaliação ({modelo_obj['nome']} - {modelo_obj['versao']}) foi finalizada! Nota: {nota_final}%. Vá ao histórico ver o feedback."
                     supabase.table("notificacoes").insert({"usuario": sdr_selecionado, "mensagem": msg_notificacao, "lida": False}).execute() # type: ignore
-                    registrar_auditoria("MONITORIA", f"Avaliou {sdr_selecionado} com {nota_final}% usando {modelo_obj['nome']}", sdr_selecionado, auditor_nome)
+                    registrar_auditoria("MONITORIA", f"Avaliou {sdr_selecionado} com {nota_final} pontos usando {modelo_obj['nome']}", sdr_selecionado, auditor_nome)
 
                     chaves_memoria = list(st.session_state.keys())
                     for k in chaves_memoria:
