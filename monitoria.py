@@ -120,7 +120,7 @@ def render_nova_monitoria():
                         label_visibility="collapsed"
                     )
                     
-                    comentario, evidencia = "", None
+                    comentario, evidencias = "", []
                     if status == "NC":
                         if eh_fatal:
                             st.error(f"🚨 ERRO FATAL: A nota será zerada.")
@@ -129,7 +129,8 @@ def render_nova_monitoria():
                             st.warning(f"⚠️ Penalidade de -{peso_penalidade}% será aplicada.")
                         
                         comentario = st.text_area("Motivo da Não Conformidade (Obrigatório):", key=key_obs)
-                        evidencia = st.file_uploader("📸 Anexar Evidência (Opcional)", type=["png", "jpg", "jpeg"], key=key_file)
+                        # 👇 HABILITADO PARA MÚLTIPLOS ARQUIVOS
+                        evidencias = st.file_uploader("📸 Anexar Evidências (Opcional)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key=key_file)
                         penalidade_acumulada += peso_penalidade
                         
                     nota_tag = "NGC" if (status == "NC" and eh_fatal) else ("NC Grave" if status == "NC" and peso_penalidade >= 7 else status)
@@ -139,7 +140,7 @@ def render_nova_monitoria():
                         "nota": nota_tag,
                         "comentario": comentario,
                         "penalidade_aplicada": 100 if (status == "NC" and eh_fatal) else (peso_penalidade if status == "NC" else 0),
-                        "evidencia_obj": evidencia
+                        "evidencias_obj": evidencias # Agora guarda a lista inteira
                     }
         return penalidade_acumulada
 
@@ -184,19 +185,27 @@ def render_nova_monitoria():
         with st.spinner("A guardar avaliação e a notificar o usuário..."):
             try:
                 for k, v in respostas_monitoria.items():
-                    ev_obj = v.pop("evidencia_obj", None) 
+                    evs_objs = v.pop("evidencias_obj", []) 
                     v["evidencia_anexada"] = False
                     v["url_arquivo"] = None
+                    v["url_arquivos"] = [] # Nova lista para múltiplas imagens
                     
-                    if ev_obj is not None:
-                        ext = ev_obj.name.split(".")[-1]
-                        nome_arq = f"ev_{sdr_selecionado.replace(' ', '_').lower()}_{int(time.time())}_{k}.{ext}"
-                        try:
-                            supabase.storage.from_("evidencias").upload(nome_arq, ev_obj.getvalue(), file_options={"content-type": f"image/{ext}"}) # type: ignore
+                    if evs_objs:
+                        for idx_ev, ev_obj in enumerate(evs_objs):
+                            ext = ev_obj.name.split(".")[-1]
+                            nome_arq = f"ev_{sdr_selecionado.replace(' ', '_').lower()}_{int(time.time())}_{k}_{idx_ev}.{ext}"
+                            try:
+                                supabase.storage.from_("evidencias").upload(nome_arq, ev_obj.getvalue(), file_options={"content-type": f"image/{ext}"}) # type: ignore
+                                public_url = supabase.storage.from_("evidencias").get_public_url(nome_arq) # type: ignore
+                                v["url_arquivos"].append(public_url)
+                            except Exception as up_e:
+                                print(f"Erro no upload da evidência: {up_e}")
+
+                        # Se subiu com sucesso pelo menos uma
+                        if v["url_arquivos"]:
                             v["evidencia_anexada"] = True
-                            v["url_arquivo"] = supabase.storage.from_("evidencias").get_public_url(nome_arq) # type: ignore
-                        except Exception as up_e:
-                            print(f"Erro no upload da evidência: {up_e}")
+                            # Mantém retrocompatibilidade para o sistema atual ler a 1ª foto
+                            v["url_arquivo"] = v["url_arquivos"][0] 
 
                 payload = {
                     "sdr": sdr_selecionado, 

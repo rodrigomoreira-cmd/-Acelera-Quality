@@ -120,7 +120,7 @@ def render_gestao_criterios():
 
         st.divider()
         st.markdown(f"### 📚 Biblioteca de Checklists ({dept_logado})")
-        st.caption("Ative, desative ou exclua os formulários que ficarão disponíveis para os auditores.")
+        st.caption("Edite os critérios, altere notas, adicione regras fatais ou ative/desative os formulários.")
         
         try:
             # APLICAÇÃO DO FILTRO GLOBAL NA BUSCA DOS MODELOS
@@ -135,16 +135,50 @@ def render_gestao_criterios():
                     status_txt = "🟢 ATIVO" if mod['ativo'] else "🔴 INATIVO"
                     with st.expander(f"{status_txt} | {mod['nome']} (Versão: {mod['versao']}) - Perfil: {mod['perfil']}"):
                         
+                        # Garante que as colunas existam mesmo se o JSON estiver incompleto
                         df_display = pd.DataFrame(mod['perguntas'])
-                        st.dataframe(df_display, use_container_width=True, hide_index=True)
+                        
+                        # AQUI ESTÁ A MÁGICA: st.data_editor permite editar direto na tela
+                        df_checklist_editado = st.data_editor(
+                            df_display,
+                            column_config={
+                                "Grupo": st.column_config.SelectboxColumn("Nível (Aba)", options=["N1", "N2", "N3"], required=True),
+                                "Pergunta": st.column_config.TextColumn("Critério / Pergunta", width="large"),
+                                "Peso": st.column_config.SelectboxColumn("Penalidade (%)", options=[1, 3, 7, 10, 20, 50, 100], required=True),
+                                "Fatal": st.column_config.CheckboxColumn("Zera Nota? (Fatal)"),
+                            },
+                            num_rows="dynamic", # Permite adicionar/remover linhas
+                            use_container_width=True,
+                            hide_index=True,
+                            key=f"editor_checklist_{mod['id']}" # A key única é vital para não dar erro no Streamlit
+                        )
                         
                         st.write("")
                         
-                        # Colunas para alinhar o toggle de ativar/desativar e o botão de excluir
-                        col_toggle, col_delete = st.columns([3, 1])
+                        # Reorganizando as colunas para acomodar o botão de salvar
+                        col_save, col_toggle, col_delete = st.columns([1.5, 2.5, 1])
                         
+                        with col_save:
+                            # Botão para salvar as edições das perguntas
+                            if st.button("💾 Atualizar Critérios", key=f"save_{mod['id']}", type="secondary", use_container_width=True):
+                                df_valido = df_checklist_editado[df_checklist_editado["Pergunta"].astype(str).str.strip() != ""]
+                                
+                                if df_valido.empty:
+                                    st.error("⚠️ O checklist não pode ficar vazio.")
+                                else:
+                                    with st.spinner("Atualizando..."):
+                                        try:
+                                            perguntas_json = df_valido.to_dict(orient="records")
+                                            supabase.table("modelos_checklist").update({"perguntas": perguntas_json}).eq("id", mod['id']).execute() # type: ignore
+                                            registrar_auditoria("EDITAR MODELO CHECKLIST", f"Alterou critérios de: '{mod['nome']} {mod['versao']}'", "Geral", usuario_logado)
+                                            st.success("✅ Critérios atualizados!")
+                                            time.sleep(1)
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Erro ao atualizar: {e}")
+
                         with col_toggle:
-                            ativo_toggle = st.toggle("Habilitar para uso nas Monitorias", value=mod['ativo'], key=f"tgl_{mod['id']}")
+                            ativo_toggle = st.toggle("Habilitar para Monitorias", value=mod['ativo'], key=f"tgl_{mod['id']}")
                             if ativo_toggle != mod['ativo']:
                                 supabase.table("modelos_checklist").update({"ativo": ativo_toggle}).eq("id", mod['id']).execute() # type: ignore
                                 acao = "Ativou" if ativo_toggle else "Desativou"
@@ -152,16 +186,15 @@ def render_gestao_criterios():
                                 st.rerun()
                                 
                         with col_delete:
-                            # 👇 BOTÃO DE EXCLUIR
-                            if st.button("🗑️ Excluir Modelo", key=f"del_{mod['id']}", use_container_width=True):
+                            if st.button("🗑️ Excluir", key=f"del_{mod['id']}", use_container_width=True):
                                 try:
                                     supabase.table("modelos_checklist").delete().eq("id", mod['id']).execute() # type: ignore
                                     registrar_auditoria("EXCLUIR MODELO CHECKLIST", f"Apagou o checklist: '{mod['nome']} {mod['versao']}'", "Geral", usuario_logado)
-                                    st.success("✅ Modelo excluído!")
+                                    st.success("✅ Excluído!")
                                     time.sleep(1)
                                     st.rerun()
                                 except Exception as e:
-                                    st.error(f"Erro ao excluir modelo: {e}")
+                                    st.error(f"Erro ao excluir: {e}")
             else:
                 st.info(f"Nenhum modelo de checklist encontrado para o filtro atual: {dept_logado}.")
         except Exception as e:

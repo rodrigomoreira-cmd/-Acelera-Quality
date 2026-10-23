@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import time
 import pytz
 import copy
@@ -8,7 +9,6 @@ from database import supabase, get_all_records_db, registrar_auditoria
 
 # --- IMPORT DA IA AQUI ---
 from analise_ia import analisar_sentimento_texto
-
 # -------------------------
 
 
@@ -480,7 +480,7 @@ def render_contestacao():
     if nivel not in ["AUDITOR", "GESTAO", "ADMIN", "GERENCIA"]:
 
         st.info(
-            "⏱️ **Regra de SLA:** Você possui até **3 dias corridos** após a data da avaliação para abrir uma contestação. Após este prazo, a nota é considerada validada."
+            "⏱️ **Regra de SLA:** Você possui até **3 dias úteis** após a data da avaliação para abrir uma contestação. Após este prazo, a nota é considerada validada."
         )
         st.write("##")
 
@@ -494,9 +494,17 @@ def render_contestacao():
             return
 
         hoje = datetime.now(fuso)
-        minhas_monitorias["dias_passados"] = (
-            hoje - minhas_monitorias["criado_em"]
-        ).dt.days
+        
+        # --- CÁLCULO DE DIAS ÚTEIS (EXCLUI SÁBADO E DOMINGO) ---
+        # Removemos registros sem data para evitar falhas no cálculo matemático do numpy
+        minhas_monitorias = minhas_monitorias.dropna(subset=["criado_em"])
+        
+        datas_criacao = minhas_monitorias["criado_em"].dt.date.values.astype('datetime64[D]')
+        hoje_np = np.datetime64(hoje.date())
+        
+        # Conta a quantidade exata de dias úteis passados
+        minhas_monitorias["dias_passados"] = np.busday_count(datas_criacao, hoje_np)
+        # -------------------------------------------------------
 
         seus_ids_contestados = []
         if df_contestacoes is not None and not df_contestacoes.empty:
@@ -517,7 +525,7 @@ def render_contestacao():
 
         if disponiveis.empty:
             st.warning(
-                "🔒 **Nenhuma avaliação disponível.** \nVocê já contestou as monitorias recentes ou elas passaram do prazo de 3 dias."
+                "🔒 **Nenhuma avaliação disponível.** \nVocê já contestou as monitorias recentes ou elas passaram do prazo de 3 dias úteis."
             )
         else:
             cols_sdr = st.columns(3)
@@ -525,9 +533,9 @@ def render_contestacao():
                 id_sel = row["id"]
                 dias_restantes = 3 - row["dias_passados"]
                 aviso_dias = (
-                    "⏳ Último dia!"
+                    "⏳ Último dia útil!"
                     if dias_restantes <= 0
-                    else f"⏳ Restam {dias_restantes} dia(s)"
+                    else f"⏳ Restam {dias_restantes} dia(s) útil(eis)"
                 )
                 dt_format = (
                     row["criado_em"].strftime("%d/%m/%Y")

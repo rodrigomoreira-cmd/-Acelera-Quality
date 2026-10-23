@@ -439,20 +439,26 @@ def render_dashboard():
             for _, row in df_filtrado.iterrows():
                 detalhes = row["detalhes"]
                 if isinstance(detalhes, dict):
-                    for criterio, info in detalhes.items():
-                        nota_crit = (
-                            info.get("nota", "C") if isinstance(info, dict) else info
-                        )
-                        if nota_crit in ["NC", "NC Grave", "NGC"]:
-                            erros_dict[criterio] = erros_dict.get(criterio, 0) + 1
-                            reinc_texto = (
-                                str(criterio)[:60] + "..."
-                                if len(str(criterio)) > 60
-                                else str(criterio)
-                            )
-                            reincidencias.append(
-                                {"Colaborador": row["sdr"], "Critério": reinc_texto}
-                            )
+                    for chave_codigo, info in detalhes.items():
+                        # Garante que info é um dicionário antes de tentar buscar dados
+                        if isinstance(info, dict):
+                            nota_crit = info.get("nota", "C")
+                            
+                            if nota_crit in ["NC", "NC Grave", "NGC"]:
+                                # Puxa o texto real da regra e não o código
+                                texto_real_regra = info.get("criterio", "Regra sem nome")
+                                
+                                erros_dict[texto_real_regra] = erros_dict.get(texto_real_regra, 0) + 1
+                                
+                                reinc_texto = (
+                                    str(texto_real_regra)[:60] + "..."
+                                    if len(str(texto_real_regra)) > 60
+                                    else str(texto_real_regra)
+                                )
+                                
+                                reincidencias.append(
+                                    {"Colaborador": row["sdr"], "Critério": reinc_texto}
+                                )
 
             if erros_dict:
                 st.markdown(
