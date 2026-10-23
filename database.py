@@ -1,9 +1,10 @@
-import streamlit as st
-import pandas as pd
-from supabase.client import create_client, Client
-from datetime import datetime
-import pytz
 import time
+from datetime import datetime
+
+import pandas as pd
+import pytz
+import streamlit as st
+from supabase.client import Client, create_client
 
 
 # ==========================================================
@@ -42,7 +43,12 @@ def get_all_records_db(tabela: str) -> pd.DataFrame:
     # Retry de 3 tentativas para blindar contra falhas curtas de internet (Errno 11)
     for tentativa in range(3):
         try:
-            res = supabase.table(tabela).select("*").order("criado_em", desc=True).execute()  # type: ignore
+            res = (
+                supabase.table(tabela)
+                .select("*")
+                .order("criado_em", desc=True)
+                .execute()
+            )  # type: ignore
             if hasattr(res, "data") and res.data:
                 return pd.DataFrame(res.data)
             return pd.DataFrame()
@@ -118,7 +124,13 @@ def buscar_contagem_notificacoes(nome_usuario: str, nivel: str) -> int:
     # Tenta buscar até 3 vezes (Resolve o Errno 11 instantaneamente)
     for _ in range(3):
         try:
-            res_notif = supabase.table("notificacoes").select("id", count="exact").eq("usuario", nome_usuario).eq("lida", False).execute()  # type: ignore
+            res_notif = (
+                supabase.table("notificacoes")
+                .select("id", count="exact")
+                .eq("usuario", nome_usuario)
+                .eq("lida", False)
+                .execute()
+            )  # type: ignore
             return (
                 int(res_notif.count)
                 if hasattr(res_notif, "count") and res_notif.count
@@ -135,11 +147,17 @@ def limpar_todas_notificacoes(nome_usuario: str):
         return
     try:
         # Limpa as antigas (para retrocompatibilidade)
-        supabase.table("monitorias").update({"visualizada": True}).eq("sdr", nome_usuario).execute()  # type: ignore
-        supabase.table("contestacoes").update({"visualizada": True}).eq("sdr_nome", nome_usuario).neq("status", "Pendente").execute()  # type: ignore
+        supabase.table("monitorias").update({"visualizada": True}).eq(
+            "sdr", nome_usuario
+        ).execute()  # type: ignore
+        supabase.table("contestacoes").update({"visualizada": True}).eq(
+            "sdr_nome", nome_usuario
+        ).neq("status", "Pendente").execute()  # type: ignore
 
         # Limpa a tabela principal nova
-        supabase.table("notificacoes").update({"lida": True}).eq("usuario", nome_usuario).execute()  # type: ignore
+        supabase.table("notificacoes").update({"lida": True}).eq(
+            "usuario", nome_usuario
+        ).execute()  # type: ignore
 
         get_all_records_db.clear()
         buscar_contagem_notificacoes.clear()
@@ -151,7 +169,9 @@ def limpar_notificacao_individual(id_notificacao, nome_usuario):
     if not supabase:
         return
     try:
-        supabase.table("notificacoes").update({"lida": True}).eq("id", id_notificacao).execute()  # type: ignore
+        supabase.table("notificacoes").update({"lida": True}).eq(
+            "id", id_notificacao
+        ).execute()  # type: ignore
         buscar_contagem_notificacoes.clear()
     except Exception as e:
         print(f"Erro ao limpar notificação: {e}")
@@ -164,7 +184,9 @@ def anular_monitoria_auditada(id_monitoria, motivo, nome_responsavel):
     if not supabase:
         return False, "Sem banco de dados."
     try:
-        res_mon = supabase.table("monitorias").select("*").eq("id", id_monitoria).execute()  # type: ignore
+        res_mon = (
+            supabase.table("monitorias").select("*").eq("id", id_monitoria).execute()
+        )  # type: ignore
         if not hasattr(res_mon, "data") or not res_mon.data:
             return False, "Não encontrada."
 
@@ -191,7 +213,9 @@ def anular_monitoria_auditada(id_monitoria, motivo, nome_responsavel):
             except Exception as e:
                 print(f"Aviso: Falha ao apagar fotos do Storage: {e}")
 
-        supabase.table("contestacoes").delete().eq("monitoria_id", id_monitoria).execute()  # type: ignore
+        supabase.table("contestacoes").delete().eq(
+            "monitoria_id", id_monitoria
+        ).execute()  # type: ignore
         supabase.table("monitorias").delete().eq("id", id_monitoria).execute()  # type: ignore
 
         detalhes_log = f"ID: {id_monitoria} | Motivo: {motivo} | Fotos apagadas: {len(arquivos_para_apagar)}"
@@ -214,7 +238,9 @@ def remover_evidencia_monitoria(
     if not supabase:
         return False, "Sem banco de dados."
     try:
-        res_mon = supabase.table("monitorias").select("*").eq("id", id_monitoria).execute()  # type: ignore
+        res_mon = (
+            supabase.table("monitorias").select("*").eq("id", id_monitoria).execute()
+        )  # type: ignore
         if not hasattr(res_mon, "data") or not res_mon.data:
             return False, "Monitoria não encontrada."
 
@@ -239,7 +265,9 @@ def remover_evidencia_monitoria(
             if isinstance(criterio_alvo, dict):
                 criterio_alvo["url_arquivo"] = None
                 criterio_alvo["evidencia_anexada"] = False
-                supabase.table("monitorias").update({"detalhes": detalhes}).eq("id", id_monitoria).execute()  # type: ignore
+                supabase.table("monitorias").update({"detalhes": detalhes}).eq(
+                    "id", id_monitoria
+                ).execute()  # type: ignore
 
         detalhes_log = f"ID: {id_monitoria} | Critério: '{nome_criterio}' | Foto apagada manualmente."
         registrar_auditoria(
