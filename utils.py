@@ -32,3 +32,4 @@ def verificar_janela_aberta() -> Tuple[bool, str]:
         # Falha de segurança: Em caso de erro de servidor/fuso, libera o acesso para não travar a operação
         print(f"Erro na verificação de data: {e}")
         return True, "Janela de fechamento aberta (Modo de Segurança)."
+        # 
